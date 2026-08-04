@@ -68,13 +68,32 @@ class _CoupleCodeScreenState extends ConsumerState<CoupleCodeScreen> {
   }
 
   Future<void> _createCouple() async {
+    // Si la pantalla se recarga (p.ej. Safari suspende la pestaña) y el usuario
+    // ya pertenece a una pareja, reutilizamos esa pareja en vez de intentar
+    // crear una nueva (lo que provocaría un error de conflicto).
+    try {
+      final existing = await ref.read(coupleRepositoryProvider).myCouple();
+      ref.read(authControllerProvider.notifier).setCoupleId(existing['id'] as String);
+      if (existing['status'] == 'ACTIVE') {
+        if (mounted) context.go('/categories');
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _code = existing['inviteCode'] as String);
+      _startPolling();
+      return;
+    } catch (_) {
+      // El usuario todavía no tiene pareja: seguimos para crear una nueva.
+    }
+
     try {
       final couple = await ref.read(coupleRepositoryProvider).create();
+      if (!mounted) return;
       setState(() => _code = couple['inviteCode'] as String);
       ref.read(authControllerProvider.notifier).setCoupleId(couple['id'] as String);
       _startPolling();
     } catch (_) {
-      setState(() => _error = 'No se pudo crear la pareja. Inténtalo de nuevo.');
+      if (mounted) setState(() => _error = 'No se pudo crear la pareja. Inténtalo de nuevo.');
     }
   }
 

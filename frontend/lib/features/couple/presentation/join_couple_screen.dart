@@ -18,6 +18,25 @@ class _JoinCoupleScreenState extends ConsumerState<JoinCoupleScreen> {
   bool _loading = false;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    // Si la pantalla se recarga y el usuario ya pertenece a una pareja,
+    // lo mandamos directo en vez de dejarle intentar unirse otra vez.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkExisting());
+  }
+
+  Future<void> _checkExisting() async {
+    try {
+      final existing = await ref.read(coupleRepositoryProvider).myCouple();
+      ref.read(authControllerProvider.notifier).setCoupleId(existing['id'] as String);
+      if (!mounted) return;
+      context.go(existing['status'] == 'ACTIVE' ? '/categories' : '/couple/create/code');
+    } catch (_) {
+      // No pertenece a ninguna pareja todavía: se queda en esta pantalla.
+    }
+  }
+
   Future<void> _join() async {
     setState(() { _loading = true; _error = null; });
     try {

@@ -22,7 +22,13 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final auth = ref.watch(authControllerProvider);
 
     ref.listen(authControllerProvider, (previous, next) {
-      if (next.isAuthenticated) context.go('/couple/welcome');
+      if (next.isAuthenticated) {
+        if (next.user?.coupleId != null) {
+          context.go('/swipe');
+        } else {
+          context.go('/couple/welcome');
+        }
+      }
     });
 
     return Scaffold(
