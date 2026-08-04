@@ -1,0 +1,39 @@
+name: movie_swipe_app
+description: Tinder de películas para parejas.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Estado
+  flutter_riverpod: ^2.5.1
+
+  # Navegación
+  go_router: ^14.2.0
+
+  # Red
+  dio: ^5.5.0
+  socket_io_client: ^2.0.3+1
+
+  # Imágenes
+  cached_network_image: ^3.4.1
+
+  # Almacenamiento seguro del JWT
+  flutter_secure_storage: ^9.2.2
+
+  # Tipografía premium (Sora + Inter) sin tener que empaquetar fuentes a mano
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

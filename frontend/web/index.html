@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="MatchFlix — Deslizad juntos, encontrad la película perfecta">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="MatchFlix">
+  <title>MatchFlix</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body { margin: 0; padding: 0; background-color: #0E0E16; }
+    #loader {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+    }
+    #loader .logo {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: linear-gradient(135deg, #FF5D73, #E8B44C);
+      display: flex; align-items: center; justify-content: center;
+    }
+    #loader p { color: #A0A0AD; font-family: -apple-system, sans-serif; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="loader">
+    <div class="logo">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="white">
+        <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V4z"/>
+      </svg>
+    </div>
+    <p>MatchFlix</p>
+  </div>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>

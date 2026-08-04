@@ -1,0 +1,22 @@
+{
+    "name": "MatchFlix",
+    "short_name": "MatchFlix",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0E0E16",
+    "theme_color": "#FF5D73",
+    "description": "Deslizad juntos, encontrad la película perfecta para esta noche.",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

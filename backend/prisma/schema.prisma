@@ -1,0 +1,192 @@
+// Esquema de base de datos - Movie Swipe App
+// PostgreSQL + Prisma ORM
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CoupleStatus {
+  PENDING // se creó pero solo hay 1 miembro
+  ACTIVE // los 2 miembros están unidos
+}
+
+enum SwipeDirection {
+  LIKE
+  DISLIKE
+}
+
+enum MatchStatus {
+  PENDING
+  WATCHED
+  REMOVED
+}
+
+enum MediaType {
+  MOVIE
+  SERIES
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  coupleId String?
+  couple   Couple? @relation("CoupleMembers", fields: [coupleId], references: [id])
+
+  swipes Swipe[]
+
+  @@index([coupleId])
+}
+
+// Una pareja se crea con un código de invitación de 6 caracteres.
+// Se activa cuando el segundo usuario se une con ese código.
+model Couple {
+  id        String       @id @default(uuid())
+  inviteCode String      @unique
+  status    CoupleStatus @default(PENDING)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  members User[] @relation("CoupleMembers")
+
+  categories CoupleCategory[]
+  filter     CoupleFilter?
+  swipes     Swipe[]
+  matches    Match[]
+}
+
+model Category {
+  id   String @id @default(uuid())
+  name String @unique
+  slug String @unique
+
+  couples CoupleCategory[]
+  movies  MovieCategory[]
+}
+
+// Selección de géneros de una pareja (combinada, aplica al catálogo de ambos)
+model CoupleCategory {
+  coupleId   String
+  categoryId String
+
+  couple   Couple   @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([coupleId, categoryId])
+}
+
+// Filtros activos de una pareja (duración, valoración, plataformas, etc.)
+model CoupleFilter {
+  id            String     @id @default(uuid())
+  coupleId      String     @unique
+  couple        Couple     @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  maxDuration   Int? // minutos
+  minRating     Float? // 0-10
+  language      String?
+  year          Int?
+  country       String?
+  mediaType     MediaType?
+  platformIds   String[] // array de Platform.id
+  updatedAt     DateTime   @updatedAt
+}
+
+model Platform {
+  id      String @id @default(uuid())
+  name    String @unique
+  slug    String @unique
+  logoUrl String?
+
+  availability MovieAvailability[]
+}
+
+model Movie {
+  id               String    @id @default(uuid())
+  externalId       String    @unique // id en el proveedor (p.ej. Watchmode)
+  title            String
+  synopsis         String?
+  posterUrl        String?
+  backdropUrl      String?
+  year             Int?
+  durationMinutes  Int?
+  originalLanguage String?
+  country          String?
+  mediaType        MediaType @default(MOVIE)
+  imdbRating       Float?
+  tmdbRating       Float?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  categories   MovieCategory[]
+  availability MovieAvailability[]
+  swipes       Swipe[]
+  matches      Match[]
+
+  @@index([year])
+  @@index([mediaType])
+}
+
+model MovieCategory {
+  movieId    String
+  categoryId String
+
+  movie    Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([movieId, categoryId])
+}
+
+model MovieAvailability {
+  id         String   @id @default(uuid())
+  movieId    String
+  platformId String
+  country    String
+  deepLinkUrl String?
+  updatedAt  DateTime @updatedAt
+
+  movie    Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+  platform Platform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+
+  @@unique([movieId, platformId, country])
+  @@index([platformId])
+}
+
+model Swipe {
+  id        String         @id @default(uuid())
+  userId    String
+  coupleId  String
+  movieId   String
+  direction SwipeDirection
+  createdAt DateTime       @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  movie  Movie  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, movieId])
+  @@index([coupleId, movieId])
+}
+
+model Match {
+  id        String      @id @default(uuid())
+  coupleId  String
+  movieId   String
+  status    MatchStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  couple Couple @relation(fields: [coupleId], references: [id], onDelete: Cascade)
+  movie  Movie  @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@unique([coupleId, movieId])
+  @@index([coupleId, status])
+}

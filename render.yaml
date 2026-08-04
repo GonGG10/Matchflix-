@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: matchflix-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        sync: false  # Pega aquí el connection string de Neon
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: "30d"
+      - key: PORT
+        value: "3000"
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: WATCHMODE_API_KEY
+        sync: false  # Pega aquí tu API key de Watchmode
+      - key: WATCHMODE_BASE_URL
+        value: "https://api.watchmode.com/v1"
+      - key: CATALOG_SYNC_COUNTRY
+        value: "ES"
+      - key: CATALOG_SYNC_CRON
+        value: "0 3 * * *"

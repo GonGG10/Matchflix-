@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Flutter / Dart
+.dart_tool/
+.pub-cache/
+.pub/
+build/
+
+# Node build output & env
+dist/
+.env
+*.env
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iws
+*.iml
+*.ipr
+
+# OS files
+.DS_Store
+Thumbs.db
