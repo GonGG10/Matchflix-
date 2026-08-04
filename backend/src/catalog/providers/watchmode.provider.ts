@@ -62,9 +62,16 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
 
         await delay(100);
       } catch (err: any) {
+        const detail = err.response?.data ?? err.message;
         this.logger.error(
-          `Error al obtener la página ${page} de títulos en Watchmode: ${err.message}`,
+          `Error al obtener la página ${page} de títulos en Watchmode: ${JSON.stringify(detail)}`,
         );
+        if (page === 1) {
+          // Si falla la primera página, algo está mal configurado (API key,
+          // parámetros, etc.) - lo propagamos para que el fallo sea visible
+          // en vez de terminar con un catálogo vacío silenciosamente.
+          throw new Error(`Watchmode list-titles falló: ${JSON.stringify(detail)}`);
+        }
         break;
       }
     }

@@ -48,6 +48,8 @@ export class CatalogService {
     this.logger.log(
       `Sincronización completa: ${titles.length} títulos procesados, ${deleted.count} eliminados.`,
     );
+
+    return { titlesProcessed: titles.length, deleted: deleted.count };
   }
 
   private async upsertTitle(title: RawCatalogTitle) {

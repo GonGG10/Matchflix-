@@ -11,7 +11,11 @@ export class CatalogController {
 
   @Post('sync')
   async triggerSync() {
-    await this.catalogService.syncCatalog();
-    return { status: 'ok' };
+    try {
+      const result = await this.catalogService.syncCatalog();
+      return { status: 'ok', ...result };
+    } catch (err: any) {
+      return { status: 'error', message: err.message };
+    }
   }
 }
