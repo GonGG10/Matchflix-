@@ -15,6 +15,7 @@ class SwipeState {
     this.isLoading = true,
     this.matchedMovie,
     this.noMoreMovies = false,
+    this.errorMessage,
   });
 
   final MovieEntity? currentMovie;
@@ -22,6 +23,7 @@ class SwipeState {
   final bool isLoading;
   final MovieEntity? matchedMovie; // no nulo mientras se muestra la animación de match
   final bool noMoreMovies;
+  final String? errorMessage; // no nulo si la carga inicial falló (red, timeout, etc.)
 
   SwipeState copyWith({
     MovieEntity? currentMovie,
@@ -30,6 +32,8 @@ class SwipeState {
     MovieEntity? matchedMovie,
     bool clearMatch = false,
     bool? noMoreMovies,
+    String? errorMessage,
+    bool clearError = false,
   }) {
     return SwipeState(
       currentMovie: currentMovie ?? this.currentMovie,
@@ -37,6 +41,7 @@ class SwipeState {
       isLoading: isLoading ?? this.isLoading,
       matchedMovie: clearMatch ? null : (matchedMovie ?? this.matchedMovie),
       noMoreMovies: noMoreMovies ?? this.noMoreMovies,
+      errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
     );
   }
 }
@@ -51,15 +56,30 @@ class SwipeController extends StateNotifier<SwipeState> {
   final Ref _ref;
 
   Future<void> _bootstrap() async {
-    final first = await _repository.fetchNext();
-    final second = first == null ? null : await _repository.fetchNext();
-    state = state.copyWith(
-      currentMovie: first,
-      nextMovie: second,
-      isLoading: false,
-      noMoreMovies: first == null,
-    );
-    _connectRealtime();
+    try {
+      final first = await _repository.fetchNext();
+      final second = first == null ? null : await _repository.fetchNext();
+      state = state.copyWith(
+        currentMovie: first,
+        nextMovie: second,
+        isLoading: false,
+        noMoreMovies: first == null,
+        clearError: true,
+      );
+      _connectRealtime();
+    } catch (_) {
+      // Sin esto, cualquier fallo (timeout, sin conexión, backend despertando)
+      // dejaba la pantalla de carga girando para siempre sin forma de reintentar.
+      state = state.copyWith(
+        isLoading: false,
+        errorMessage: 'No se pudo conectar. Comprueba tu conexión e inténtalo de nuevo.',
+      );
+    }
+  }
+
+  Future<void> retry() async {
+    state = state.copyWith(isLoading: true, clearError: true);
+    await _bootstrap();
   }
 
   void _connectRealtime() async {

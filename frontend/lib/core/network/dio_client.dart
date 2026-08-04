@@ -8,8 +8,11 @@ class DioClient {
   DioClient(this._tokenStorage) {
     dio = Dio(BaseOptions(
       baseUrl: ApiEndpoints.baseUrl,
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
+      // Render (plan gratis) puede tardar 30-50s en 'despertar' el backend
+      // tras estar inactivo. Un timeout corto aquí provoca fallos falsos
+      // justo en la primera petición tras un rato sin uso.
+      connectTimeout: const Duration(seconds: 50),
+      receiveTimeout: const Duration(seconds: 50),
     ));
 
     dio.interceptors.add(InterceptorsWrapper(

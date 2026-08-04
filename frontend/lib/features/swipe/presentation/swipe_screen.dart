@@ -95,12 +95,21 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
             icon: const Icon(Icons.favorite_rounded, color: AppColors.like),
             onPressed: () => context.push('/matches'),
           ),
+          IconButton(
+            icon: const Icon(Icons.account_circle_rounded),
+            onPressed: () => context.push('/profile'),
+          ),
         ],
       ),
       body: Stack(
         children: [
           if (state.isLoading)
             const LoadingIndicator(message: 'Buscando películas para vosotros…')
+          else if (state.errorMessage != null)
+            _ErrorState(
+              message: state.errorMessage!,
+              onRetry: () => ref.read(swipeControllerProvider.notifier).retry(),
+            )
           else if (state.noMoreMovies || state.currentMovie == null)
             _EmptyState(onAdjustFilters: () => context.push('/filters'))
           else
@@ -230,6 +239,31 @@ class _RoundActionButton extends StatelessWidget {
           boxShadow: [BoxShadow(color: color.withOpacity(0.25), blurRadius: 16, spreadRadius: 1)],
         ),
         child: Icon(icon, color: color, size: large ? 30 : 26),
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  const _ErrorState({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_off_rounded, size: 56, color: AppColors.textMuted),
+            const SizedBox(height: 16),
+            Text(message, textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyLarge),
+            const SizedBox(height: 20),
+            OutlinedButton(onPressed: onRetry, child: const Text('Reintentar')),
+          ],
+        ),
       ),
     );
   }
