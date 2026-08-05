@@ -23,10 +23,13 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
   async fetchFullCatalog(country: string): Promise<RawCatalogTitle[]> {
     this.logger.log(`Descargando catálogo de Watchmode para ${country}...`);
 
-    const MAX_PAGES = 10;
-    const PAGE_SIZE = 250;
-    const CONCURRENCY_LIMIT = 5;
-    const BATCH_DELAY_MS = 200;
+    // Reducido para no exceder el rate limit de 120 req/min de Watchmode free.
+    // 1 página de 50 títulos = 1 petición list + 50 peticiones de detalle = 51 total.
+    // Con concurrencia 3 y pausa de 1s entre lotes, completa en ~17s sin saturar.
+    const MAX_PAGES = 2;
+    const PAGE_SIZE = 50;
+    const CONCURRENCY_LIMIT = 3;
+    const BATCH_DELAY_MS = 1000;
 
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -62,14 +65,36 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
 
         await delay(100);
       } catch (err: any) {
+        const status = err.response?.status;
         const detail = err.response?.data ?? err.message;
         this.logger.error(
           `Error al obtener la página ${page} de títulos en Watchmode: ${JSON.stringify(detail)}`,
         );
+        // Si es rate limit (429), esperamos 60s y reintentamos una vez
+        if (status === 429 && page === 1) {
+          this.logger.warn('Rate limit de Watchmode alcanzado. Esperando 60s para reintentar...');
+          await delay(60000);
+          try {
+            const retryResponse = await axios.get(`${this.baseUrl}/list-titles/`, {
+              params: {
+                apiKey: this.apiKey,
+                regions: country,
+                types: 'movie,tv_series',
+                limit: PAGE_SIZE,
+                page,
+              },
+            });
+            const titles = retryResponse.data?.titles ?? [];
+            for (const t of titles) {
+              if (t.id) titleIds.push(t.id);
+            }
+            if (titles.length < PAGE_SIZE) break;
+            continue;
+          } catch (retryErr: any) {
+            this.logger.error(`Reintento también falló: ${JSON.stringify(retryErr.response?.data ?? retryErr.message)}`);
+          }
+        }
         if (page === 1) {
-          // Si falla la primera página, algo está mal configurado (API key,
-          // parámetros, etc.) - lo propagamos para que el fallo sea visible
-          // en vez de terminar con un catálogo vacío silenciosamente.
           throw new Error(`Watchmode list-titles falló: ${JSON.stringify(detail)}`);
         }
         break;
