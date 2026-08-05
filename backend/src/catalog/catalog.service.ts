@@ -6,6 +6,7 @@ import {
   STREAMING_CATALOG_PROVIDER,
   StreamingCatalogProvider,
 } from './streaming-catalog-provider.interface';
+import { buildFallbackCatalog } from './fallback-catalog.data';
 
 function slugify(text: string): string {
   return text
@@ -18,6 +19,9 @@ function slugify(text: string): string {
 @Injectable()
 export class CatalogService {
   private readonly logger = new Logger(CatalogService.name);
+  // Throttle en memoria para no golpear la API de Watchmode en cada login.
+  private lastLoginSyncAttempt: number | null = null;
+  private readonly LOGIN_SYNC_THROTTLE_MS = 6 * 60 * 60 * 1000; // 6 horas
 
   constructor(
     @Inject(STREAMING_CATALOG_PROVIDER)
@@ -34,6 +38,15 @@ export class CatalogService {
     this.logger.log(`Iniciando sincronización de catálogo (${country})`);
 
     const titles = await this.provider.fetchFullCatalog(country);
+
+    if (titles.length === 0) {
+      // Salvaguarda: si el proveedor no devuelve nada, no borramos el
+      // catálogo existente (evita dejar la app sin contenido por un fallo
+      // puntual o una respuesta vacía inesperada).
+      this.logger.warn('Watchmode devolvió 0 títulos; se mantiene el catálogo actual sin cambios.');
+      return { titlesProcessed: 0, deleted: 0 };
+    }
+
     const seenExternalIds: string[] = [];
 
     for (const title of titles) {
@@ -50,6 +63,48 @@ export class CatalogService {
     );
 
     return { titlesProcessed: titles.length, deleted: deleted.count };
+  }
+
+  // Inserta un catálogo de respaldo (películas y series reales, con pósters
+  // que no dependen de ninguna clave de API) si la tabla Movie está vacía.
+  // Garantiza que siempre haya contenido con el que probar la app, incluso
+  // si Watchmode no está configurado todavía o la clave no es válida.
+  async seedFallbackCatalogIfEmpty(): Promise<{ seeded: boolean; count: number }> {
+    const existing = await this.prisma.movie.count();
+    if (existing > 0) return { seeded: false, count: existing };
+
+    const country = this.config.get<string>('watchmode.country') ?? 'ES';
+    const titles = buildFallbackCatalog(country);
+    for (const title of titles) {
+      await this.upsertTitle(title);
+    }
+    this.logger.log(`Catálogo de respaldo insertado: ${titles.length} títulos.`);
+    return { seeded: true, count: titles.length };
+  }
+
+  // Se llama en cada login/registro. No bloquea la respuesta al usuario:
+  // 1. Si no hay ninguna película todavía, siembra el catálogo de respaldo
+  //    al momento (rápido, sin llamadas externas) para que la app nunca
+  //    aparezca vacía.
+  // 2. Además, como mucho una vez cada 6 horas, intenta sincronizar de
+  //    verdad con Watchmode en segundo plano (si falla, solo queda en logs).
+  triggerLoginSync(): void {
+    this.seedFallbackCatalogIfEmpty().catch((err) =>
+      this.logger.error('Fallo al sembrar el catálogo de respaldo', err),
+    );
+
+    const now = Date.now();
+    if (
+      this.lastLoginSyncAttempt !== null &&
+      now - this.lastLoginSyncAttempt < this.LOGIN_SYNC_THROTTLE_MS
+    ) {
+      return;
+    }
+    this.lastLoginSyncAttempt = now;
+
+    this.syncCatalog().catch((err) =>
+      this.logger.warn(`Sincronización con Watchmode en login fallida (se mantiene el catálogo actual): ${err.message}`),
+    );
   }
 
   private async upsertTitle(title: RawCatalogTitle) {

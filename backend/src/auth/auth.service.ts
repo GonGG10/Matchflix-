@@ -8,6 +8,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { CatalogService } from '../catalog/catalog.service';
 
 const SALT_ROUNDS = 12;
 
@@ -16,6 +17,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly catalogService: CatalogService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -35,6 +37,10 @@ export class AuthService {
       },
     });
 
+    // No bloqueante: siembra el catálogo si está vacío e intenta refrescar
+    // desde Watchmode en segundo plano (máximo cada 6h).
+    this.catalogService.triggerLoginSync();
+
     return this.buildAuthResponse(user);
   }
 
@@ -50,6 +56,8 @@ export class AuthService {
     if (!passwordMatches) {
       throw new UnauthorizedException('Credenciales inválidas');
     }
+
+    this.catalogService.triggerLoginSync();
 
     return this.buildAuthResponse(user);
   }
