@@ -24,8 +24,11 @@ dependencies:
   # Imágenes
   cached_network_image: ^3.4.1
 
-  # Almacenamiento seguro del JWT
+  # Almacenamiento seguro del JWT (móvil/desktop: Keychain/Keystore)
   flutter_secure_storage: ^9.2.2
+  # Almacenamiento del JWT en web (localStorage): más fiable entre recargas
+  # que IndexedDB/WebCrypto en algunos navegadores (p.ej. Safari en iPad).
+  shared_preferences: ^2.3.2
 
   # Tipografía premium (Sora + Inter) sin tener que empaquetar fuentes a mano
   google_fonts: ^6.2.1
@@ -37,3 +40,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/logo.png
