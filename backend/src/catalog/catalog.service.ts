@@ -54,15 +54,30 @@ export class CatalogService {
       await this.upsertTitle(title);
     }
 
-    const deleted = await this.prisma.movie.deleteMany({
+    // Eliminamos solo las películas de Watchmode que ya no aparecen en esta
+    // sincronización. El catálogo de respaldo (externalId con prefijo
+    // 'fallback-') se conserva siempre para que la app nunca quede vacía.
+    const staleMovies = await this.prisma.movie.findMany({
       where: { externalId: { notIn: seenExternalIds } },
+      select: { id: true, externalId: true },
     });
+    const idsToDelete = staleMovies
+      .filter((m) => !m.externalId.startsWith('fallback-'))
+      .map((m) => m.id);
+
+    let deletedCount = 0;
+    if (idsToDelete.length > 0) {
+      const result = await this.prisma.movie.deleteMany({
+        where: { id: { in: idsToDelete } },
+      });
+      deletedCount = result.count;
+    }
 
     this.logger.log(
-      `Sincronización completa: ${titles.length} títulos procesados, ${deleted.count} eliminados.`,
+      `Sincronización completa: ${titles.length} títulos de Watchmode procesados, ${deletedCount} eliminados (catálogo de respaldo preservado).`,
     );
 
-    return { titlesProcessed: titles.length, deleted: deleted.count };
+    return { titlesProcessed: titles.length, deleted: deletedCount };
   }
 
   // Inserta un catálogo de respaldo (películas y series reales, con pósters

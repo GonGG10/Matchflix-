@@ -16,14 +16,14 @@ class WelcomeScreen extends StatelessWidget {
           child: Column(
             children: [
               const Spacer(flex: 3),
-              Container(
-                width: 96,
-                height: 96,
-                decoration: const BoxDecoration(
-                  gradient: AppColors.gradientMatch,
-                  shape: BoxShape.circle,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.asset(
+                  'assets/images/logo.png',
+                  width: 108,
+                  height: 108,
+                  fit: BoxFit.cover,
                 ),
-                child: const Icon(Icons.local_movies_rounded, color: Colors.white, size: 46),
               ),
               const SizedBox(height: 28),
               Text('MatchFlix', style: Theme.of(context).textTheme.headlineLarge),
