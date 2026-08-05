@@ -9,7 +9,7 @@ export default () => ({
     // está configurada en Render, se usa la clave embebida como fallback
     // para que el catálogo de Watchmode funcione desde el primer deploy
     // sin que el usuario tenga que tocar el panel de Render manualmente.
-    apiKey: process.env.WATCHMODE_API_KEY ?? 'wm_yh9OQKozOSiSqc92-dRJOFY5Se6MHnQmU5-L67b1FDU',
+    apiKey: process.env.WATCHMODE_API_KEY || 'wm_yh9OQKozOSiSqc92-dRJOFY5Se6MHnQmU5-L67b1FDU',
     baseUrl: process.env.WATCHMODE_BASE_URL ?? 'https://api.watchmode.com/v1',
     country: process.env.CATALOG_SYNC_COUNTRY ?? 'ES',
   },
