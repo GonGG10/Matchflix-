@@ -139,33 +139,92 @@ export class CatalogService {
       const engCat = bySlug.get(engSlug);
       const espCat = bySlug.get(espSlug);
 
-      if (!engCat) continue; // English category doesn't exist
+      if (!engCat) continue;
 
-      if (espCat) {
-        // Move all movie links from English to Spanish
-        const links = await this.prisma.movieCategory.findMany({
-          where: { categoryId: engCat.id },
-        });
-        for (const link of links) {
-          await this.prisma.movieCategory.upsert({
-            where: { movieId_categoryId: { movieId: link.movieId, categoryId: espCat.id } },
-            update: {},
-            create: { movieId: link.movieId, categoryId: espCat.id },
+      try {
+        if (espCat) {
+          // Move MovieCategory links
+          const movieLinks = await this.prisma.movieCategory.findMany({
+            where: { categoryId: engCat.id },
           });
+          for (const link of movieLinks) {
+            await this.prisma.movieCategory.upsert({
+              where: { movieId_categoryId: { movieId: link.movieId, categoryId: espCat.id } },
+              update: {},
+              create: { movieId: link.movieId, categoryId: espCat.id },
+            });
+          }
+          await this.prisma.movieCategory.deleteMany({ where: { categoryId: engCat.id } });
+
+          // Move CoupleCategory links too
+          const coupleLinks = await this.prisma.coupleCategory.findMany({
+            where: { categoryId: engCat.id },
+          });
+          for (const link of coupleLinks) {
+            await this.prisma.coupleCategory.upsert({
+              where: { coupleId_categoryId: { coupleId: link.coupleId, categoryId: espCat.id } },
+              update: {},
+              create: { coupleId: link.coupleId, categoryId: espCat.id },
+            });
+          }
+          await this.prisma.coupleCategory.deleteMany({ where: { categoryId: engCat.id } });
+
+          // Now safe to delete the English category
+          await this.prisma.category.delete({ where: { id: engCat.id } });
+          merged++;
+          this.logger.log(`Categoría '${engName}' fusionada con '${espName}'`);
+        } else {
+          // Spanish category doesn't exist yet — rename the English one
+          await this.prisma.category.update({
+            where: { id: engCat.id },
+            data: { name: espName, slug: espSlug },
+          });
+          merged++;
+          this.logger.log(`Categoría '${engName}' renombrada a '${espName}'`);
         }
-        await this.prisma.movieCategory.deleteMany({ where: { categoryId: engCat.id } });
-        await this.prisma.category.delete({ where: { id: engCat.id } });
-        merged++;
-      } else {
-        // Spanish category doesn't exist yet — just rename the English one
-        await this.prisma.category.update({
-          where: { id: engCat.id },
-          data: { name: espName, slug: espSlug },
-        });
-        merged++;
+      } catch (err: any) {
+        this.logger.error(`Error al deduplicar categoría '${engName}': ${err.message}`);
       }
     }
-    this.logger.log(`Categorías duplicadas limpiadas: ${merged} categorías consolidadas.`);
+
+    // Also handle compound categories that don't have direct mappings
+    const compoundMap: Record<string, string> = {
+      'Sci-Fi & Fantasy': 'Ciencia ficción y Fantasía',
+      'War & Politics': 'Guerra y Política',
+      'Action & Adventure': 'Acción y Aventura',
+    };
+    for (const [engName, espName] of Object.entries(compoundMap)) {
+      const engCat = bySlug.get(slugify(engName));
+      if (!engCat) continue;
+      try {
+        await this.prisma.category.update({
+          where: { id: engCat.id },
+          data: { name: espName, slug: slugify(espName) },
+        });
+        merged++;
+        this.logger.log(`Categoría compuesta '${engName}' renombrada a '${espName}'`);
+      } catch (err: any) {
+        this.logger.error(`Error al renombrar '${engName}': ${err.message}`);
+      }
+    }
+
+    // Delete any remaining unmapped English categories that have no movies
+    const remainingCats = await this.prisma.category.findMany({
+      include: { _count: { select: { movies: true, couples: true } } },
+    });
+    const unmappedEnglish = remainingCats.filter((c) => {
+      const knownSlugs = new Set([...Object.values(GENRE_MAP), ...Object.values(compoundMap)].map(s => slugify(s)));
+      return !knownSlugs.has(c.slug) && c._count.movies === 0 && c._count.couples === 0;
+    });
+    for (const cat of unmappedEnglish) {
+      try {
+        await this.prisma.category.delete({ where: { id: cat.id } });
+        merged++;
+        this.logger.log(`Categoría sin uso '${cat.name}' eliminada`);
+      } catch (_) {}
+    }
+
+    this.logger.log(`Deduplicación completa: ${merged} categorías consolidadas.`);
     return merged;
   }
 
