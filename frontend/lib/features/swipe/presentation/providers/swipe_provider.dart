@@ -4,6 +4,7 @@ import '../../../../core/network/core_providers.dart';
 import '../../../../core/network/token_storage.dart';
 import '../../data/movies_repository.dart';
 import '../../domain/movie_entity.dart';
+import '../../../filters/presentation/providers/filters_provider.dart';
 
 final moviesRepositoryProvider = Provider((ref) => MoviesRepository(ref.watch(dioProvider)));
 
@@ -69,14 +70,25 @@ class SwipeController extends StateNotifier<SwipeState> {
   final Set<String> _swipedIds = {};
   bool _isSwiping = false;
 
+  /// Obtiene el mediaType actual del filtro guardado
+  String? get _currentMediaType {
+    try {
+      final filters = _ref.read(filtersControllerProvider);
+      return filters.mediaType;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _bootstrap() async {
     try {
       _swipedIds.clear();
-      final first = await _repository.fetchNext(excludeIds: []);
+      final mediaType = _currentMediaType;
+      final first = await _repository.fetchNext(excludeIds: [], mediaType: mediaType);
       if (first != null) _swipedIds.add(first.id);
       final second = first == null
           ? null
-          : await _repository.fetchNext(excludeIds: _swipedIds.toList());
+          : await _repository.fetchNext(excludeIds: _swipedIds.toList(), mediaType: mediaType);
       if (second != null) _swipedIds.add(second.id);
 
       state = SwipeState(
@@ -117,13 +129,13 @@ class SwipeController extends StateNotifier<SwipeState> {
     try {
       final repo = _ref.read(roomsRepositoryProvider);
       final status = await repo.getRoomStatus();
-      final coupleId = status['inviteCode'] as String?; // Use inviteCode as room identifier
+      // CRITICAL: use coupleId (UUID), NOT inviteCode
+      final coupleId = status['coupleId'] as String?;
       final hasRoom = status['hasRoom'] as bool? ?? false;
-      if (!hasRoom) return;
-      // The backend socket uses coupleId from the JWT, we just need to connect
+      if (!hasRoom || coupleId == null) return;
       _ref.read(socketServiceProvider).connect(
             token: token,
-            coupleId: coupleId ?? '',
+            coupleId: coupleId,
             onMatch: (data) {
               final movie = MovieEntity.fromJson(data['movie'] as Map<String, dynamic>);
               final matchCount = data['matchCount'] as int? ?? 0;
@@ -154,7 +166,7 @@ class SwipeController extends StateNotifier<SwipeState> {
     final upcoming = state.nextMovie;
     state = state.copyWith(
       currentMovie: upcoming,
-      nextMovie: null, // sentinel permite null
+      nextMovie: null,
       noMoreMovies: upcoming == null,
     );
 
@@ -165,7 +177,8 @@ class SwipeController extends StateNotifier<SwipeState> {
 
     // Precargar la siguiente carta, excluyendo TODAS las ya vistas
     if (upcoming != null) {
-      final preloaded = await _repository.fetchNext(excludeIds: _swipedIds.toList());
+      final mediaType = _currentMediaType;
+      final preloaded = await _repository.fetchNext(excludeIds: _swipedIds.toList(), mediaType: mediaType);
       if (preloaded != null) _swipedIds.add(preloaded.id);
       state = state.copyWith(nextMovie: preloaded);
     }

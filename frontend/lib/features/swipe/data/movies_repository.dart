@@ -6,14 +6,22 @@ class MoviesRepository {
   MoviesRepository(this._dio);
   final Dio _dio;
 
-  /// fetchNext acepta [excludeIds] — IDs de películas que ya hemos visto
-  /// en esta sesión, para que el backend no nos las devuelva otra vez.
-  Future<MovieEntity?> fetchNext({List<String>? excludeIds}) async {
+  /// fetchNext acepta [excludeIds] y [mediaType] para filtrar correctamente.
+  Future<MovieEntity?> fetchNext({
+    List<String>? excludeIds,
+    String? mediaType,
+  }) async {
+    final params = <String, dynamic>{};
+    if (excludeIds != null && excludeIds.isNotEmpty) {
+      params['excludeIds'] = excludeIds.join(',');
+    }
+    if (mediaType != null) {
+      params['mediaType'] = mediaType;
+    }
+
     final response = await _dio.get(
       ApiEndpoints.nextMovie,
-      queryParameters: excludeIds != null && excludeIds.isNotEmpty
-          ? {'excludeIds': excludeIds.join(',')}
-          : null,
+      queryParameters: params.isEmpty ? null : params,
     );
     if (response.data == null) return null;
     return MovieEntity.fromJson(response.data as Map<String, dynamic>);

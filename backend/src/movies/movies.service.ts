@@ -7,8 +7,6 @@ export class MoviesService {
   private readonly logger = new Logger(MoviesService.name);
   constructor(private readonly prisma: PrismaService) {}
 
-  // Construye el WHERE de Prisma combinando las categorías/filtros de la pareja
-  // con los filtros puntuales que llegan por query params.
   private async buildWhere(coupleId: string, overrides: Partial<{
     maxDuration: number;
     minRating: number;
@@ -50,14 +48,14 @@ export class MoviesService {
     return where;
   }
 
-  // Devuelve la siguiente película que el usuario aún no ha deslizado,
-  // respetando las categorías y filtros de su pareja.
   async findNext(userId: string, coupleId: string, overrides: any, excludeIds: string[] = []) {
     const where = await this.buildWhere(coupleId, overrides);
 
-    const [alreadySwiped, matchedMovies] = await Promise.all([
+    // Excluir TODOS los swipes de la pareja (ambos miembros), no solo del usuario actual.
+    // Si la pareja ya votó una película, no tiene sentido volver a mostrarla.
+    const [coupleSwipes, matchedMovies] = await Promise.all([
       this.prisma.swipe.findMany({
-        where: { userId },
+        where: { coupleId },
         select: { movieId: true },
       }),
       this.prisma.match.findMany({
@@ -65,17 +63,19 @@ export class MoviesService {
         select: { movieId: true },
       }),
     ]);
-    const swipedIds = alreadySwiped.map((s) => s.movieId);
+
+    const swipedIds = coupleSwipes.map((s) => s.movieId);
     const matchedIds = matchedMovies.map((m) => m.movieId);
+    // Combinar todas las exclusiones: swipes de la pareja + matches + frontend excludeIds
     const allExclude = [...new Set([...swipedIds, ...matchedIds, ...excludeIds])];
     if (allExclude.length > 0) {
       where.id = { notIn: allExclude };
     }
 
     this.logger.debug(
-      `findNext: usuario=${userId}, swiped=${swipedIds.length}, ` +
-      `matched=${matchedIds.length}, excludeIds=${excludeIds.length}, ` +
-      `total_exclude=${allExclude.length}`
+      `findNext: couple=${coupleId}, coupleSwipes=${swipedIds.length}, ` +
+      `matched=${matchedIds.length}, frontendExclude=${excludeIds.length}, ` +
+      `total_exclude=${allExclude.length}, mediaType=${where.mediaType ?? 'ANY'}`
     );
 
     const candidates = await this.prisma.movie.findMany({
@@ -88,6 +88,8 @@ export class MoviesService {
       this.logger.debug(`findNext: no hay candidatos después de excluir ${allExclude.length} películas`);
       return null;
     }
+
+    this.logger.debug(`findNext: ${candidates.length} candidatos disponibles, eligiendo uno al azar`);
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 

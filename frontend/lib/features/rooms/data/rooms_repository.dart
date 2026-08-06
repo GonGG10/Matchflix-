@@ -30,7 +30,6 @@ class RoomsRepository {
     final password = 'Tx${_randomId()}#1a';
     final displayName = _randomName();
 
-    // 1. Registrar usuario anónimo
     final regRes = await _dio.post('${ApiEndpoints.baseUrl}/auth/register', data: {
       'email': email,
       'password': password,
@@ -39,7 +38,6 @@ class RoomsRepository {
     final token = (regRes.data as Map<String, dynamic>)['accessToken'] as String;
     await _tokenStorage.save(token);
 
-    // 2. Crear pareja (ahora con JWT)
     final coupleRes = await _dio.post('${ApiEndpoints.baseUrl}/couples');
     final couple = coupleRes.data as Map<String, dynamic>;
 
@@ -49,6 +47,7 @@ class RoomsRepository {
     return {
       'accessToken': token,
       'inviteCode': couple['inviteCode'],
+      'coupleId': couple['id'],
       'displayName': displayName,
       'expiresAt': expiresAt.toIso8601String(),
     };
@@ -60,7 +59,6 @@ class RoomsRepository {
     final password = 'Tx${_randomId()}#1a';
     final displayName = _randomName();
 
-    // 1. Registrar usuario anónimo
     final regRes = await _dio.post('${ApiEndpoints.baseUrl}/auth/register', data: {
       'email': email,
       'password': password,
@@ -69,7 +67,6 @@ class RoomsRepository {
     final token = (regRes.data as Map<String, dynamic>)['accessToken'] as String;
     await _tokenStorage.save(token);
 
-    // 2. Unirse a la pareja
     final joinRes = await _dio.post('${ApiEndpoints.baseUrl}/couples/join', data: {
       'inviteCode': inviteCode,
     });
@@ -81,6 +78,7 @@ class RoomsRepository {
     return {
       'accessToken': token,
       'inviteCode': couple['inviteCode'],
+      'coupleId': couple['id'],
       'displayName': displayName,
       'expiresAt': expiresAt.toIso8601String(),
       'coupleStatus': couple['status'],
@@ -101,6 +99,7 @@ class RoomsRepository {
         return {
           'hasRoom': true,
           'status': 'EXPIRED',
+          'coupleId': couple['id'],
           'inviteCode': couple['inviteCode'],
           'members': couple['members'],
           'expiresAt': expiresAt.toIso8601String(),
@@ -114,6 +113,7 @@ class RoomsRepository {
       return {
         'hasRoom': true,
         'status': couple['status'],
+        'coupleId': couple['id'],
         'inviteCode': couple['inviteCode'],
         'members': couple['members'],
         'expiresAt': expiresAt.toIso8601String(),
