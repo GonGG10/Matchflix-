@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RoomsController } from './rooms.controller';
 import { RoomsService } from './rooms.service';
+import { RoomsScheduler } from './rooms.scheduler';
 import { CatalogModule } from '../catalog/catalog.module';
 
 @Module({
@@ -18,7 +19,7 @@ import { CatalogModule } from '../catalog/catalog.module';
     }),
   ],
   controllers: [RoomsController],
-  providers: [RoomsService],
+  providers: [RoomsService, RoomsScheduler],
   exports: [RoomsService],
 })
 export class RoomsModule {}
