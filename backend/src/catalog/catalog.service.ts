@@ -52,7 +52,7 @@ export class CatalogService {
   // Tarea completa de sincronización: descarga el catálogo del proveedor y
   // hace upsert de películas, plataformas, disponibilidad y géneros.
   // Las películas que ya no aparecen en el catálogo del proveedor se eliminan.
-  async syncCatalog() {
+  async syncCatalog(force = false) {
     const country = this.config.get<string>('watchmode.country') ?? 'ES';
     this.logger.log(`Iniciando sincronización de catálogo (${country})`);
 

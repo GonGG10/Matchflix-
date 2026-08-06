@@ -15,6 +15,7 @@ import { MatchesModule } from './matches/matches.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { FiltersModule } from './filters/filters.module';
+import { RoomsModule } from './rooms/rooms.module';
 
 @Module({
   controllers: [AppController],
@@ -33,6 +34,7 @@ import { FiltersModule } from './filters/filters.module';
     RealtimeModule,
     CatalogModule,
     FiltersModule,
+    RoomsModule,
   ],
 })
 export class AppModule {}

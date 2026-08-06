@@ -4,8 +4,10 @@ import { CatalogScheduler } from './catalog.scheduler';
 import { WatchmodeProvider } from './providers/watchmode.provider';
 import { STREAMING_CATALOG_PROVIDER } from './streaming-catalog-provider.interface';
 import { CatalogController } from './catalog.controller';
+import { RoomsModule } from '../rooms/rooms.module';
 
 @Module({
+  imports: [RoomsModule],
   controllers: [CatalogController],
   providers: [
     CatalogService,

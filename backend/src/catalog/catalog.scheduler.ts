@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { CatalogService } from './catalog.service';
+import { RoomsService } from '../rooms/rooms.service';
 
 @Injectable()
 export class CatalogScheduler {

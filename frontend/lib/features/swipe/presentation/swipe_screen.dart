@@ -1,17 +1,21 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/network/core_providers.dart';
+import '../../../core/network/token_storage.dart';
+import '../../../core/network/token_storage.dart';
 import '../../../shared/widgets/loading_indicator.dart';
 import 'providers/swipe_provider.dart';
 import 'widgets/movie_card.dart';
 import 'widgets/match_overlay.dart';
+import '../../auth/presentation/providers/auth_provider.dart';
 
 const _swipeThreshold = 110.0;
 
 class SwipeScreen extends ConsumerStatefulWidget {
   const SwipeScreen({super.key});
-
   @override
   ConsumerState<SwipeScreen> createState() => _SwipeScreenState();
 }
@@ -22,6 +26,10 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
   late final AnimationController _flingController;
   Animation<Offset>? _flingAnimation;
   bool? _pendingLiked;
+  Timer? _roomTimer;
+  Timer? _countdownTimer;
+  String _remainingTime = '';
+  DateTime? _expiresAt;
 
   @override
   void initState() {
@@ -38,10 +46,51 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
           setState(() => _dragOffset = Offset.zero);
         }
       });
+    _startRoomTimer();
+  }
+
+  void _startRoomTimer() {
+    _checkRoomExpiry();
+    _roomTimer = Timer.periodic(const Duration(seconds: 10), (_) => _checkRoomExpiry());
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => _updateCountdown());
+  }
+
+  Future<void> _checkRoomExpiry() async {
+    try {
+      final repo = ref.read(roomsRepositoryProvider);
+      final status = await repo.getRoomStatus();
+      if (!mounted) return;
+      final s = status['status'] as String?;
+      final expiresAtStr = status['expiresAt'] as String?;
+      if (expiresAtStr != null) {
+        _expiresAt = DateTime.parse(expiresAtStr);
+        _updateCountdown();
+      }
+      if (s == 'EXPIRED' || s == 'NONE') {
+        _roomTimer?.cancel();
+        _countdownTimer?.cancel();
+        await ref.read(tokenStorageProvider).clear();
+        if (mounted) context.go('/');
+      }
+    } catch (_) {}
+  }
+
+  void _updateCountdown() {
+    if (_expiresAt == null) return;
+    final remaining = _expiresAt!.difference(DateTime.now());
+    if (remaining.isNegative) {
+      setState(() => _remainingTime = '00:00');
+      return;
+    }
+    final m = remaining.inMinutes;
+    final s = remaining.inSeconds % 60;
+    setState(() => _remainingTime = '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}');
   }
 
   @override
   void dispose() {
+    _roomTimer?.cancel();
+    _countdownTimer?.cancel();
     _flingController.dispose();
     super.dispose();
   }
@@ -85,14 +134,30 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Descubrir'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Descubrir'),
+            const SizedBox(width: 12),
+            if (_remainingTime.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _remainingTime,
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+              ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Reiniciar',
-            onPressed: () {
-              ref.read(swipeControllerProvider.notifier).refresh();
-            },
+            tooltip: 'Reiniciar selección',
+            onPressed: () => ref.read(swipeControllerProvider.notifier).refresh(),
           ),
           IconButton(
             icon: const Icon(Icons.tune_rounded),
@@ -101,10 +166,6 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
           IconButton(
             icon: const Icon(Icons.favorite_rounded, color: AppColors.like),
             onPressed: () => context.push('/matches'),
-          ),
-          IconButton(
-            icon: const Icon(Icons.account_circle_rounded),
-            onPressed: () => context.push('/profile'),
           ),
         ],
       ),
@@ -121,7 +182,6 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
             _EmptyState(onAdjustFilters: () => context.push('/filters'))
           else
             _buildCardStack(state),
-
           if (state.matchedMovie != null)
             MatchOverlay(
               movie: state.matchedMovie!,
@@ -160,13 +220,11 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
                         children: [
                           MovieCard(movie: state.currentMovie!),
                           Positioned(
-                            top: 32,
-                            left: 24,
+                            top: 32, left: 24,
                             child: Opacity(opacity: nopeOpacity, child: const _StampLabel('NO', color: AppColors.dislike)),
                           ),
                           Positioned(
-                            top: 32,
-                            right: 24,
+                            top: 32, right: 24,
                             child: Opacity(opacity: likeOpacity, child: const _StampLabel('ME GUSTA', color: AppColors.like)),
                           ),
                         ],
@@ -205,7 +263,6 @@ class _StampLabel extends StatelessWidget {
   const _StampLabel(this.text, {required this.color});
   final String text;
   final Color color;
-
   @override
   Widget build(BuildContext context) {
     return Transform.rotate(
@@ -217,10 +274,7 @@ class _StampLabel extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           color: Colors.black.withOpacity(0.3),
         ),
-        child: Text(
-          text,
-          style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 22, letterSpacing: 1),
-        ),
+        child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 22, letterSpacing: 1)),
       ),
     );
   }
@@ -232,15 +286,13 @@ class _RoundActionButton extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
   final bool large;
-
   @override
   Widget build(BuildContext context) {
     final size = large ? 64.0 : 54.0;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: size,
-        height: size,
+        width: size, height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: AppColors.surface,
@@ -257,7 +309,6 @@ class _ErrorState extends StatelessWidget {
   const _ErrorState({required this.message, required this.onRetry});
   final String message;
   final VoidCallback onRetry;
-
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -281,7 +332,6 @@ class _ErrorState extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   const _EmptyState({required this.onAdjustFilters});
   final VoidCallback onAdjustFilters;
-
   @override
   Widget build(BuildContext context) {
     return Center(
@@ -294,11 +344,7 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: 16),
             Text('Por ahora no hay más películas', style: Theme.of(context).textTheme.titleLarge, textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            const Text(
-              'Prueba a ampliar vuestras categorías o filtros.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
+            const Text('Prueba a ampliar vuestras categorías o filtros.', textAlign: TextAlign.center, style: TextStyle(color: AppColors.textSecondary)),
             const SizedBox(height: 20),
             OutlinedButton(onPressed: onAdjustFilters, child: const Text('Ajustar filtros')),
           ],

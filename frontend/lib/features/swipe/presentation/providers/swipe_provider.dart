@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/core_providers.dart';
 import '../../../../core/network/token_storage.dart';
-import '../../../auth/presentation/providers/auth_provider.dart';
 import '../../data/movies_repository.dart';
 import '../../domain/movie_entity.dart';
 
@@ -114,22 +113,29 @@ class SwipeController extends StateNotifier<SwipeState> {
 
   void _connectRealtime() async {
     final token = await _tokenStorage.read();
-    final coupleId = _ref.read(authControllerProvider).user?.coupleId;
-    if (coupleId == null || token == null) return;
-    _ref.read(socketServiceProvider).connect(
-          token: token,
-          coupleId: coupleId,
-          onMatch: (data) {
-            final movie = MovieEntity.fromJson(data['movie'] as Map<String, dynamic>);
-            final matchCount = data['matchCount'] as int? ?? 0;
-            final maxReached = data['maxMatchesReached'] as bool? ?? false;
-            state = state.copyWith(
-              matchedMovie: movie,
-              matchCount: matchCount,
-              maxMatchesReached: maxReached,
-            );
-          },
-        );
+    if (token == null) return;
+    try {
+      final repo = _ref.read(roomsRepositoryProvider);
+      final status = await repo.getRoomStatus();
+      final coupleId = status['inviteCode'] as String?; // Use inviteCode as room identifier
+      final hasRoom = status['hasRoom'] as bool? ?? false;
+      if (!hasRoom) return;
+      // The backend socket uses coupleId from the JWT, we just need to connect
+      _ref.read(socketServiceProvider).connect(
+            token: token,
+            coupleId: coupleId ?? '',
+            onMatch: (data) {
+              final movie = MovieEntity.fromJson(data['movie'] as Map<String, dynamic>);
+              final matchCount = data['matchCount'] as int? ?? 0;
+              final maxReached = data['maxMatchesReached'] as bool? ?? false;
+              state = state.copyWith(
+                matchedMovie: movie,
+                matchCount: matchCount,
+                maxMatchesReached: maxReached,
+              );
+            },
+          );
+    } catch (_) {}
   }
 
   void dismissMatch() => state = state.copyWith(clearMatch: true);

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'token_storage.dart';
 import 'dio_client.dart';
 import '../realtime/socket_service.dart';
+import '../../features/rooms/data/rooms_repository.dart';
 
 // Providers de infraestructura compartidos por toda la app.
 final secureStorageProvider = Provider((ref) => const FlutterSecureStorage());
@@ -15,3 +16,6 @@ final dioProvider = Provider<Dio>((ref) {
 });
 
 final socketServiceProvider = Provider((ref) => SocketService());
+
+final roomsRepositoryProvider = Provider((ref) =>
+    RoomsRepository(ref.watch(dioProvider), ref.watch(tokenStorageProvider)));
