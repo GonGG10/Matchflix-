@@ -5,6 +5,7 @@ import '../../features/auth/presentation/welcome_screen.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/couple/presentation/create_couple_screen.dart';
+import '../../features/couple/presentation/couple_welcome_screen.dart';
 import '../../features/couple/presentation/join_couple_screen.dart';
 import '../../features/categories/presentation/category_selection_screen.dart';
 import '../../features/swipe/presentation/swipe_screen.dart';
