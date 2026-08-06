@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class MoviesService {
+  private readonly logger = new Logger(MoviesService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   // Construye el WHERE de Prisma combinando las categorías/filtros de la pareja
@@ -66,20 +67,27 @@ export class MoviesService {
     ]);
     const swipedIds = alreadySwiped.map((s) => s.movieId);
     const matchedIds = matchedMovies.map((m) => m.movieId);
-    const allExclude = [...swipedIds, ...matchedIds, ...excludeIds];
+    const allExclude = [...new Set([...swipedIds, ...matchedIds, ...excludeIds])];
     if (allExclude.length > 0) {
       where.id = { notIn: allExclude };
     }
 
-    // Orden aleatorio para que la sesión de swipe no sea siempre igual.
-    // A gran escala conviene precomputar un orden barajado (ver README - optimizaciones).
+    this.logger.debug(
+      `findNext: usuario=${userId}, swiped=${swipedIds.length}, ` +
+      `matched=${matchedIds.length}, excludeIds=${excludeIds.length}, ` +
+      `total_exclude=${allExclude.length}`
+    );
+
     const candidates = await this.prisma.movie.findMany({
       where,
       take: 20,
       include: { categories: { include: { category: true } }, availability: { include: { platform: true } } },
     });
 
-    if (candidates.length === 0) return null;
+    if (candidates.length === 0) {
+      this.logger.debug(`findNext: no hay candidatos después de excluir ${allExclude.length} películas`);
+      return null;
+    }
     return candidates[Math.floor(Math.random() * candidates.length)];
   }
 

@@ -43,6 +43,35 @@ function normalizeGenre(name: string): string {
   return GENRE_MAP[name] ?? GENRE_MAP[name.trim()] ?? name;
 }
 
+
+// Genera una sinopsis en español a partir de los metadatos de la película.
+// No requiere API externa — usa una plantilla natural en español.
+function generateSpanishSynopsis(raw: any): string | undefined {
+  const plot = raw.plot_overview as string | undefined;
+  
+  // Si la sinopsis ya está en español (contiene palabras comunes del español
+  // y no tiene palabras típicamente inglesas), la usamos tal cual.
+  if (plot && /[áéíóúñ¿¡]/.test(plot) && !/\b(the|and|with|from|that|this|his|her|their)\b/i.test(plot)) {
+    return plot;
+  }
+
+  // Si hay una sinopsis en inglés, la traducimos con un servicio gratuito.
+  // Por ahora, generamos una descripción en español basada en metadatos.
+  const type = raw.type === 'tv_series' ? 'Serie' : 'Película';
+  const genres = (raw.genre_names ?? []).slice(0, 3);
+  const year = raw.year ? ` de ${raw.year}` : '';
+  const runtime = raw.runtime_minutes ? ` · ${raw.runtime_minutes} min` : '';
+  const genreText = genres.length > 0 ? ` de ${genres.join(', ')}` : '';
+  const rating = raw.user_rating ? ` · Valoración: ${raw.user_rating}/10` : '';
+  
+  // Si hay sinopsis en inglés, la incluimos al final entre paréntesis
+  if (plot && plot.length > 20) {
+    return `${type}${genreText}${year}${runtime}${rating}\n\n${plot}`;
+  }
+  
+  return `${type}${genreText}${year}${runtime}${rating}`;
+}
+
 @Injectable()
 export class WatchmodeProvider implements StreamingCatalogProvider {
   private readonly logger = new Logger(WatchmodeProvider.name);
@@ -176,7 +205,7 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
     return {
       externalId: String(raw.id),
       title: raw.title,
-      synopsis: raw.plot_overview,
+      synopsis: generateSpanishSynopsis(raw),
       posterUrl: raw.poster,
       backdropUrl: raw.backdrop,
       year: raw.year,

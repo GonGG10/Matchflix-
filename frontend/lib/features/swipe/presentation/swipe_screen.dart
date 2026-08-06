@@ -88,6 +88,13 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
         title: const Text('Descubrir'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            tooltip: 'Reiniciar',
+            onPressed: () {
+              ref.read(swipeControllerProvider.notifier).refresh();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.tune_rounded),
             onPressed: () => context.push('/filters'),
           ),

@@ -54,4 +54,6 @@ class ApiEndpoints {
   static const nextMovie = '/movies/next';
   static const swipes = '/swipes';
   static const matches = '/matches';
+  static const resetSession = '/couples/reset-session';
+  static const resetSwipes = '/couples/reset-swipes';
 }

@@ -8,7 +8,6 @@ import '../../domain/movie_entity.dart';
 
 final moviesRepositoryProvider = Provider((ref) => MoviesRepository(ref.watch(dioProvider)));
 
-/// Sentinel para distinguir "no pasado" de "pasado como null" en copyWith.
 class _Sentinel { const _Sentinel(); }
 const _sentinel = _Sentinel();
 
@@ -73,16 +72,19 @@ class SwipeController extends StateNotifier<SwipeState> {
 
   Future<void> _bootstrap() async {
     try {
-      final first = await _repository.fetchNext(excludeIds: _swipedIds.toList());
-      final second = first == null ? null : await _repository.fetchNext(excludeIds: [..._swipedIds, first.id]);
-      _swipedIds.add(first?.id ?? '');
+      _swipedIds.clear();
+      final first = await _repository.fetchNext(excludeIds: []);
+      if (first != null) _swipedIds.add(first.id);
+      final second = first == null
+          ? null
+          : await _repository.fetchNext(excludeIds: _swipedIds.toList());
       if (second != null) _swipedIds.add(second.id);
-      state = state.copyWith(
+
+      state = SwipeState(
         currentMovie: first,
         nextMovie: second,
         isLoading: false,
         noMoreMovies: first == null,
-        clearError: true,
       );
       if (first != null) {
         _connectRealtime();
@@ -97,6 +99,16 @@ class SwipeController extends StateNotifier<SwipeState> {
 
   Future<void> retry() async {
     state = state.copyWith(isLoading: true, clearError: true);
+    await _bootstrap();
+  }
+
+  /// Reinicia todo: borra swipes en el backend y recarga desde cero.
+  Future<void> refresh() async {
+    _isSwiping = false;
+    state = const SwipeState(isLoading: true);
+    try {
+      await _repository.resetSwipes();
+    } catch (_) {}
     await _bootstrap();
   }
 
@@ -123,32 +135,29 @@ class SwipeController extends StateNotifier<SwipeState> {
   void dismissMatch() => state = state.copyWith(clearMatch: true);
 
   Future<void> swipe({required bool liked}) async {
-    // Guard against double-swipes
     if (_isSwiping) return;
     final movie = state.currentMovie;
     if (movie == null) return;
 
     _isSwiping = true;
 
-    // Registrar localmente para no volver a verla
+    // Registrar localmente
     _swipedIds.add(movie.id);
 
-    // El upcoming pasa a ser current. nextMovie se setea a null explícitamente.
+    // Avanzar a la siguiente carta
     final upcoming = state.nextMovie;
     state = state.copyWith(
       currentMovie: upcoming,
-      nextMovie: null, // AHORA SÍ se puede setear a null gracias al sentinel
+      nextMovie: null, // sentinel permite null
       noMoreMovies: upcoming == null,
     );
 
-    // Enviamos el swipe al backend (await para asegurar que se procese
-    // antes de pedir la siguiente película y evitar duplicados).
+    // Enviar swipe al backend (await para que quede registrado)
     try {
       await _repository.sendSwipe(movieId: movie.id, liked: liked);
-    } catch (_) {
-      // Si falla el swipe, no bloqueamos al usuario
-    }
+    } catch (_) {}
 
+    // Precargar la siguiente carta, excluyendo TODAS las ya vistas
     if (upcoming != null) {
       final preloaded = await _repository.fetchNext(excludeIds: _swipedIds.toList());
       if (preloaded != null) _swipedIds.add(preloaded.id);

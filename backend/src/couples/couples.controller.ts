@@ -23,4 +23,14 @@ export class CouplesController {
   findMine(@CurrentUser() user: { userId: string }) {
     return this.couplesService.findMine(user.userId);
   }
+
+  @Post('reset-session')
+  resetSession(@CurrentUser() user: { userId: string }) {
+    return this.couplesService.resetSession(user.userId);
+  }
+
+  @Post('reset-swipes')
+  resetSwipes(@CurrentUser() user: { userId: string }) {
+    return this.couplesService.resetSwipes(user.userId);
+  }
 }

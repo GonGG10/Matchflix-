@@ -86,4 +86,47 @@ export class CouplesService {
     if (!user?.couple) throw new NotFoundException('No perteneces a ninguna pareja todavía');
     return user.couple;
   }
+
+  // Reinicio completo: borra la pareja, todos los swipes y matches.
+  // El usuario vuelve al estado "sin pareja" y debe crear/unirse a una nueva.
+  async resetSession(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.coupleId) return { reset: true };
+
+    const coupleId = user.coupleId;
+
+    // Borrar swipes y matches de la pareja
+    await this.prisma.swipe.deleteMany({ where: { coupleId } });
+    await this.prisma.match.deleteMany({ where: { coupleId } });
+
+    // Borrar preferencias de categorías y filtros de la pareja
+    await this.prisma.coupleCategory.deleteMany({ where: { coupleId } });
+    await this.prisma.coupleFilter.deleteMany({ where: { coupleId } });
+
+    // Desvincular a ambos miembros
+    await this.prisma.user.updateMany({
+      where: { coupleId },
+      data: { coupleId: null },
+    });
+
+    // Borrar la pareja
+    await this.prisma.couple.delete({ where: { id: coupleId } });
+
+    return { reset: true };
+  }
+
+  // Reinicio de swipes solamente: borra swipes y matches pero mantiene
+  // la pareja activa. Útil para el botón "Refresh" en la pantalla de swipe.
+  async resetSwipes(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.coupleId) throw new NotFoundException('No perteneces a ninguna pareja');
+
+    const coupleId = user.coupleId;
+
+    await this.prisma.swipe.deleteMany({ where: { coupleId } });
+    await this.prisma.match.deleteMany({ where: { coupleId } });
+
+    return { reset: true, coupleId };
+  }
+
 }

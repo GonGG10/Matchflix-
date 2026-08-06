@@ -29,6 +29,14 @@ class AuthRepository {
     return _parse(response.data);
   }
 
+  Future<void> resetSession() async {
+    await _dio.post(ApiEndpoints.resetSession);
+  }
+
+  Future<void> resetSwipes() async {
+    await _dio.post(ApiEndpoints.resetSwipes);
+  }
+
   Future<UserEntity> me() async {
     final response = await _dio.get(ApiEndpoints.me);
     return UserEntity.fromJson(response.data as Map<String, dynamic>);

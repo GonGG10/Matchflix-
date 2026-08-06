@@ -19,6 +19,10 @@ class MoviesRepository {
     return MovieEntity.fromJson(response.data as Map<String, dynamic>);
   }
 
+  Future<void> resetSwipes() async {
+    await _dio.post(ApiEndpoints.resetSwipes);
+  }
+
   Future<void> sendSwipe({required String movieId, required bool liked}) {
     return _dio.post(ApiEndpoints.swipes, data: {
       'movieId': movieId,
