@@ -35,17 +35,7 @@ class AuthController extends StateNotifier<AuthState> {
     state = state.copyWith(isLoading: true);
     try {
       final user = await _repository.me();
-      // Siempre reseteamos la sesión al restaurar: el usuario debe
-      // crear una pareja nueva cada vez que abre la app.
-      try {
-        await _repository.resetSession();
-        state = state.copyWith(
-          user: user.copyWith(coupleId: null, coupleStatus: null),
-          isLoading: false,
-        );
-      } catch (_) {
-        state = state.copyWith(user: user, isLoading: false);
-      }
+      state = state.copyWith(user: user, isLoading: false);
     } catch (_) {
       await _tokenStorage.clear();
       state = const AuthState();
