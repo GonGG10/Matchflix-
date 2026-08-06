@@ -16,6 +16,25 @@ function slugify(text: string): string {
     .replace(/\s+/g, '-');
 }
 
+
+// Mapa de géneros en inglés → español para evitar categorías duplicadas.
+const GENRE_MAP: Record<string, string> = {
+  'Action': 'Acción', 'Action & Adventure': 'Acción y Aventura',
+  'Adventure': 'Aventura', 'Animation': 'Animación', 'Anime': 'Anime',
+  'Comedy': 'Comedia', 'Crime': 'Crimen', 'Documentary': 'Documental',
+  'Drama': 'Drama', 'Family': 'Familia', 'Fantasy': 'Fantasía',
+  'History': 'Historia', 'Horror': 'Terror', 'Music': 'Música',
+  'Musical': 'Musical', 'Mystery': 'Misterio', 'Romance': 'Romance',
+  'Science Fiction': 'Ciencia ficción', 'Sci-Fi': 'Ciencia ficción',
+  'Thriller': 'Thriller', 'War': 'Guerra', 'Western': 'Western',
+  'Kids': 'Infantil', 'Reality': 'Reality', 'Sport': 'Deporte',
+  'Talk': 'Talk', 'News': 'Noticias', 'Game Show': 'Concursos',
+};
+
+function normalizeGenre(name: string): string {
+  return GENRE_MAP[name] ?? GENRE_MAP[name.trim()] ?? name;
+}
+
 @Injectable()
 export class CatalogService {
   private readonly logger = new Logger(CatalogService.name);
@@ -54,23 +73,29 @@ export class CatalogService {
       await this.upsertTitle(title);
     }
 
-    // Eliminamos solo las películas de Watchmode que ya no aparecen en esta
-    // sincronización. El catálogo de respaldo (externalId con prefijo
-    // 'fallback-') se conserva siempre para que la app nunca quede vacía.
-    const staleMovies = await this.prisma.movie.findMany({
-      where: { externalId: { notIn: seenExternalIds } },
-      select: { id: true, externalId: true },
-    });
-    const idsToDelete = staleMovies
-      .filter((m) => !m.externalId.startsWith('fallback-'))
-      .map((m) => m.id);
-
+    // Solo eliminamos películas antiguas de Watchmode si la nueva sincronización
+    // trajo un número razonable de títulos (al menos 20). Si Watchmode devolvió
+    // muy pocos (fallo parcial, rate limit, etc.), conservamos todo para no
+    // vaciar el catálogo.
     let deletedCount = 0;
-    if (idsToDelete.length > 0) {
-      const result = await this.prisma.movie.deleteMany({
-        where: { id: { in: idsToDelete } },
+    if (titles.length >= 20) {
+      const staleMovies = await this.prisma.movie.findMany({
+        where: { externalId: { notIn: seenExternalIds } },
+        select: { id: true, externalId: true },
       });
-      deletedCount = result.count;
+      const idsToDelete = staleMovies
+        .filter((m) => !m.externalId.startsWith('fallback-'))
+        .map((m) => m.id);
+      if (idsToDelete.length > 0) {
+        const result = await this.prisma.movie.deleteMany({
+          where: { id: { in: idsToDelete } },
+        });
+        deletedCount = result.count;
+      }
+    } else {
+      this.logger.warn(
+        `Solo ${titles.length} títulos de Watchmode — no se elimina el catálogo existente.`,
+      );
     }
 
     this.logger.log(
@@ -159,7 +184,8 @@ export class CatalogService {
   }
 
   private async syncGenres(movieId: string, genreNames: string[]) {
-    for (const name of genreNames) {
+    for (const rawName of genreNames) {
+      const name = normalizeGenre(rawName);
       const category = await this.prisma.category.upsert({
         where: { slug: slugify(name) },
         update: {},

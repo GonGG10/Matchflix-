@@ -6,9 +6,43 @@ import {
   StreamingCatalogProvider,
 } from '../streaming-catalog-provider.interface';
 
-// Implementación concreta contra la API de Watchmode.
-// Esta es la ÚNICA clase de todo el backend que conoce la URL y la clave de
-// Watchmode. La clave se lee de una variable de entorno y nunca sale de aquí.
+// Mapa de géneros en inglés → nombre canónico en español.
+// Evita categorías duplicadas como "Action" y "Acción".
+const GENRE_MAP: Record<string, string> = {
+  'Action': 'Acción',
+  'Action & Adventure': 'Acción y Aventura',
+  'Adventure': 'Aventura',
+  'Animation': 'Animación',
+  'Anime': 'Anime',
+  'Comedy': 'Comedia',
+  'Crime': 'Crimen',
+  'Documentary': 'Documental',
+  'Drama': 'Drama',
+  'Family': 'Familia',
+  'Fantasy': 'Fantasía',
+  'History': 'Historia',
+  'Horror': 'Terror',
+  'Music': 'Música',
+  'Musical': 'Musical',
+  'Mystery': 'Misterio',
+  'Romance': 'Romance',
+  'Science Fiction': 'Ciencia ficción',
+  'Sci-Fi': 'Ciencia ficción',
+  'Thriller': 'Thriller',
+  'War': 'Guerra',
+  'Western': 'Western',
+  'Kids': 'Infantil',
+  'Reality': 'Reality',
+  'Sport': 'Deporte',
+  'Talk': 'Talk',
+  'News': 'Noticias',
+  'Game Show': 'Concursos',
+};
+
+function normalizeGenre(name: string): string {
+  return GENRE_MAP[name] ?? GENRE_MAP[name.trim()] ?? name;
+}
+
 @Injectable()
 export class WatchmodeProvider implements StreamingCatalogProvider {
   private readonly logger = new Logger(WatchmodeProvider.name);
@@ -23,19 +57,19 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
   async fetchFullCatalog(country: string): Promise<RawCatalogTitle[]> {
     this.logger.log(`Descargando catálogo de Watchmode para ${country}...`);
 
-    // Reducido para no exceder el rate limit de 120 req/min de Watchmode free.
-    // 1 página de 50 títulos = 1 petición list + 50 peticiones de detalle = 51 total.
-    // Con concurrencia 3 y pausa de 1s entre lotes, completa en ~17s sin saturar.
-    const MAX_PAGES = 2;
+    // Aumentado a 8 páginas de 50 = 400 títulos para tener un catálogo decente.
+    // 1 petición list + 50 peticiones de detalle por página = ~408 peticiones total.
+    // Con concurrencia 5 y pausa de 500ms entre lotes, completa en ~40s.
+    // Rate limit de Watchmode free: 120 req/min → ~6.8s por lote de 5 → seguro.
+    const MAX_PAGES = 8;
     const PAGE_SIZE = 50;
-    const CONCURRENCY_LIMIT = 3;
-    const BATCH_DELAY_MS = 1000;
+    const CONCURRENCY_LIMIT = 5;
+    const BATCH_DELAY_MS = 500;
 
     const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
     const titleIds: number[] = [];
 
-    // Paso 1: Paginación para obtener listado de títulos (hasta 10 páginas de 250 títulos)
     for (let page = 1; page <= MAX_PAGES; page++) {
       try {
         const listResponse = await axios.get(`${this.baseUrl}/list-titles/`, {
@@ -70,7 +104,6 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
         this.logger.error(
           `Error al obtener la página ${page} de títulos en Watchmode: ${JSON.stringify(detail)}`,
         );
-        // Si es rate limit (429), esperamos 60s y reintentamos una vez
         if (status === 429 && page === 1) {
           this.logger.warn('Rate limit de Watchmode alcanzado. Esperando 60s para reintentar...');
           await delay(60000);
@@ -105,7 +138,6 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
 
     const results: RawCatalogTitle[] = [];
 
-    // Paso 2: Peticiones paralelas por lotes de 5 con pequeña pausa entre lotes
     for (let i = 0; i < titleIds.length; i += CONCURRENCY_LIMIT) {
       const batchIds = titleIds.slice(i, i + CONCURRENCY_LIMIT);
 
@@ -138,6 +170,9 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
   }
 
   private mapToRawCatalogTitle(raw: any, country: string): RawCatalogTitle {
+    // Normalizar géneros a español para evitar categorías duplicadas
+    const genres = (raw.genre_names ?? []).map((g: string) => normalizeGenre(g));
+
     return {
       externalId: String(raw.id),
       title: raw.title,
@@ -151,7 +186,7 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
       mediaType: raw.type === 'tv_series' ? 'SERIES' : 'MOVIE',
       imdbRating: raw.user_rating,
       tmdbRating: raw.critic_score ? raw.critic_score / 10 : undefined,
-      genres: raw.genre_names ?? [],
+      genres,
       availability: (raw.sources ?? [])
         .filter((s: any) => s.region === country)
         .map((s: any) => ({ platformName: s.name, deepLinkUrl: s.web_url })),
