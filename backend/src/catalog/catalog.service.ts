@@ -102,6 +102,9 @@ export class CatalogService {
       `Sincronización completa: ${titles.length} títulos de Watchmode procesados, ${deletedCount} eliminados (catálogo de respaldo preservado).`,
     );
 
+    // Limpiar categorías duplicadas después de la sincronización
+    await this.dedupCategories();
+
     return { titlesProcessed: titles.length, deleted: deletedCount };
   }
 
@@ -109,17 +112,61 @@ export class CatalogService {
   // que no dependen de ninguna clave de API) si la tabla Movie está vacía.
   // Garantiza que siempre haya contenido con el que probar la app, incluso
   // si Watchmode no está configurado todavía o la clave no es válida.
-  async seedFallbackCatalogIfEmpty(): Promise<{ seeded: boolean; count: number }> {
-    const existing = await this.prisma.movie.count();
-    if (existing > 0) return { seeded: false, count: existing };
-
+  // Ahora siempre hace upsert del catálogo de respaldo (no solo cuando está vacío),
+  // para garantizar un mínimo de contenido disponible.
+  async seedFallbackCatalog(): Promise<{ seeded: boolean; count: number }> {
     const country = this.config.get<string>('watchmode.country') ?? 'ES';
     const titles = buildFallbackCatalog(country);
     for (const title of titles) {
       await this.upsertTitle(title);
     }
-    this.logger.log(`Catálogo de respaldo insertado: ${titles.length} títulos.`);
-    return { seeded: true, count: titles.length };
+    const total = await this.prisma.movie.count();
+    this.logger.log(`Catálogo de respaldo actualizado: ${titles.length} títulos en upsert. Total en BD: ${total}.`);
+    return { seeded: true, count: total };
+  }
+
+
+  // Limpia categorías duplicadas: si existen "Action" y "Acción", mueve
+  // todas las películas de "Action" a "Acción" y elimina "Action".
+  async dedupCategories(): Promise<number> {
+    const allCategories = await this.prisma.category.findMany();
+    const bySlug = new Map(allCategories.map((c) => [c.slug, c]));
+
+    let merged = 0;
+    for (const [engName, espName] of Object.entries(GENRE_MAP)) {
+      const engSlug = slugify(engName);
+      const espSlug = slugify(espName);
+      const engCat = bySlug.get(engSlug);
+      const espCat = bySlug.get(espSlug);
+
+      if (!engCat) continue; // English category doesn't exist
+
+      if (espCat) {
+        // Move all movie links from English to Spanish
+        const links = await this.prisma.movieCategory.findMany({
+          where: { categoryId: engCat.id },
+        });
+        for (const link of links) {
+          await this.prisma.movieCategory.upsert({
+            where: { movieId_categoryId: { movieId: link.movieId, categoryId: espCat.id } },
+            update: {},
+            create: { movieId: link.movieId, categoryId: espCat.id },
+          });
+        }
+        await this.prisma.movieCategory.deleteMany({ where: { categoryId: engCat.id } });
+        await this.prisma.category.delete({ where: { id: engCat.id } });
+        merged++;
+      } else {
+        // Spanish category doesn't exist yet — just rename the English one
+        await this.prisma.category.update({
+          where: { id: engCat.id },
+          data: { name: espName, slug: espSlug },
+        });
+        merged++;
+      }
+    }
+    this.logger.log(`Categorías duplicadas limpiadas: ${merged} categorías consolidadas.`);
+    return merged;
   }
 
   // Se llama en cada login/registro. No bloquea la respuesta al usuario:
@@ -129,9 +176,11 @@ export class CatalogService {
   // 2. Además, como mucho una vez cada 6 horas, intenta sincronizar de
   //    verdad con Watchmode en segundo plano (si falla, solo queda en logs).
   triggerLoginSync(): void {
-    this.seedFallbackCatalogIfEmpty().catch((err) =>
-      this.logger.error('Fallo al sembrar el catálogo de respaldo', err),
-    );
+    this.seedFallbackCatalog()
+      .then(() => this.dedupCategories())
+      .catch((err) =>
+        this.logger.error('Fallo al actualizar el catálogo de respaldo', err),
+      );
 
     const now = Date.now();
     if (
