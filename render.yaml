@@ -6,9 +6,10 @@ services:
     dockerContext: ./backend
     healthCheckPath: /api
     plan: free
+    autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        sync: false  # Pega aquí el connection string de Neon
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
@@ -16,7 +17,7 @@ services:
       - key: CORS_ORIGIN
         value: "*"
       - key: WATCHMODE_API_KEY
-        sync: false  # Pega aquí tu API key de Watchmode
+        sync: false
       - key: WATCHMODE_BASE_URL
         value: "https://api.watchmode.com/v1"
       - key: CATALOG_SYNC_COUNTRY
