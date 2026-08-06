@@ -1,13 +1,7 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RoomsService } from './rooms.service';
-
-class JoinRoomDto {
-  @IsString()
-  inviteCode!: string;
-}
 
 @Controller('rooms')
 export class RoomsController {
@@ -19,8 +13,8 @@ export class RoomsController {
   }
 
   @Post('join')
-  joinRoom(@Body() dto: JoinRoomDto) {
-    return this.roomsService.joinRoom(dto.inviteCode);
+  joinRoom(@Body('inviteCode') inviteCode: string) {
+    return this.roomsService.joinRoom(inviteCode);
   }
 
   @UseGuards(JwtAuthGuard)
