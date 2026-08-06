@@ -64,6 +64,13 @@ export class SwipesService {
       include: { movie: true },
     });
 
-    this.matchesGateway.notifyMatch(coupleId, match);
+    const matchCount = await this.prisma.match.count({ where: { coupleId } });
+    const maxMatchesReached = matchCount >= 5;
+
+    this.matchesGateway.notifyMatch(coupleId, {
+      ...match,
+      matchCount,
+      maxMatchesReached,
+    });
   }
 }

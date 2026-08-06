@@ -41,7 +41,7 @@ export class AuthService {
     // desde Watchmode en segundo plano (máximo cada 6h).
     this.catalogService.triggerLoginSync();
 
-    return this.buildAuthResponse(user);
+    return await this.buildAuthResponse(user);
   }
 
   async login(dto: LoginDto) {
@@ -59,11 +59,19 @@ export class AuthService {
 
     this.catalogService.triggerLoginSync();
 
-    return this.buildAuthResponse(user);
+    return await this.buildAuthResponse(user);
   }
 
-  private buildAuthResponse(user: { id: string; email: string; displayName: string; coupleId: string | null }) {
+  private async buildAuthResponse(user: { id: string; email: string; displayName: string; coupleId: string | null }) {
     const accessToken = this.jwt.sign({ sub: user.id, email: user.email });
+    let coupleStatus: string | null = null;
+    if (user.coupleId) {
+      const couple = await this.prisma.couple.findUnique({
+        where: { id: user.coupleId },
+        select: { status: true },
+      });
+      coupleStatus = couple?.status ?? null;
+    }
     return {
       accessToken,
       user: {
@@ -71,6 +79,7 @@ export class AuthService {
         email: user.email,
         displayName: user.displayName,
         coupleId: user.coupleId,
+        coupleStatus,
       },
     };
   }

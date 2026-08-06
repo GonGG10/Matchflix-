@@ -119,6 +119,8 @@ class _SwipeScreenState extends ConsumerState<SwipeScreen> with SingleTickerProv
             MatchOverlay(
               movie: state.matchedMovie!,
               onClose: () => ref.read(swipeControllerProvider.notifier).dismissMatch(),
+              maxMatchesReached: state.maxMatchesReached,
+              matchCount: state.matchCount,
             ),
         ],
       ),

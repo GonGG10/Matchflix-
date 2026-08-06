@@ -25,6 +25,12 @@ export class MatchesController {
     return this.matchesService.findForCouple(coupleId, status);
   }
 
+  @Get('count')
+  async count(@CurrentUser() user: { userId: string }) {
+    const coupleId = await this.coupleIdOf(user.userId);
+    return this.matchesService.countForCouple(coupleId);
+  }
+
   @Patch(':id/watched')
   async markWatched(@CurrentUser() user: { userId: string }, @Param('id') id: string) {
     const coupleId = await this.coupleIdOf(user.userId);

@@ -23,8 +23,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     ref.listen(authControllerProvider, (previous, next) {
       if (next.isAuthenticated) {
-        if (next.user?.coupleId != null) {
+        if (next.user?.isCoupleActive == true) {
           context.go('/swipe');
+        } else if (next.user?.coupleId != null) {
+          context.go('/couple/create/code');
         } else {
           context.go('/couple/welcome');
         }

@@ -15,9 +15,14 @@ export class UsersService {
         avatarUrl: true,
         coupleId: true,
         createdAt: true,
+        couple: { select: { status: true } },
       },
     });
     if (!user) throw new NotFoundException('Usuario no encontrado');
-    return user;
+    const { couple, ...rest } = user;
+    return {
+      ...rest,
+      coupleStatus: couple?.status ?? null,
+    };
   }
 }

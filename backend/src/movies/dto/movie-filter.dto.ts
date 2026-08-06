@@ -35,4 +35,8 @@ export class MovieFilterDto {
   @IsArray()
   @IsString({ each: true })
   platformIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  excludeIds?: string;
 }

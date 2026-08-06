@@ -23,9 +23,14 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     await Future.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
     final auth = ref.read(authControllerProvider);
-    if (auth.isAuthenticated && auth.user?.coupleId != null) {
+    if (auth.isAuthenticated && auth.user?.isCoupleActive == true) {
+      // Pareja activa → directo a deslizar
       context.go('/swipe');
+    } else if (auth.isAuthenticated && auth.user?.coupleId != null) {
+      // Tiene pareja pero el partner aún no se ha unido → mostrar código
+      context.go('/couple/create/code');
     } else if (auth.isAuthenticated) {
+      // Autenticado pero sin pareja → crear/unirse
       context.go('/couple/welcome');
     } else {
       context.go('/welcome');

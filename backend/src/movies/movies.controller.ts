@@ -22,7 +22,8 @@ export class MoviesController {
   @Get('next')
   async next(@CurrentUser() user: { userId: string }, @Query() filters: MovieFilterDto) {
     const coupleId = await this.coupleIdOf(user.userId);
-    return this.moviesService.findNext(user.userId, coupleId, filters);
+    const excludeIds = filters.excludeIds ? filters.excludeIds.split(',').filter(Boolean) : [];
+    return this.moviesService.findNext(user.userId, coupleId, filters, excludeIds);
   }
 
   @Get()

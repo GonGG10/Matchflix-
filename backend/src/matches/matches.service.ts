@@ -14,6 +14,11 @@ export class MatchesService {
     });
   }
 
+  async countForCouple(coupleId: string) {
+    const count = await this.prisma.match.count({ where: { coupleId } });
+    return { count, maxReached: count >= 5 };
+  }
+
   async markWatched(coupleId: string, matchId: string) {
     await this.assertBelongsToCouple(coupleId, matchId);
     return this.prisma.match.update({

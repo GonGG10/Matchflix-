@@ -6,8 +6,15 @@ class MoviesRepository {
   MoviesRepository(this._dio);
   final Dio _dio;
 
-  Future<MovieEntity?> fetchNext() async {
-    final response = await _dio.get(ApiEndpoints.nextMovie);
+  /// fetchNext acepta [excludeIds] — IDs de películas que ya hemos visto
+  /// en esta sesión, para que el backend no nos las devuelva otra vez.
+  Future<MovieEntity?> fetchNext({List<String>? excludeIds}) async {
+    final response = await _dio.get(
+      ApiEndpoints.nextMovie,
+      queryParameters: excludeIds != null && excludeIds.isNotEmpty
+          ? {'excludeIds': excludeIds.join(',')}
+          : null,
+    );
     if (response.data == null) return null;
     return MovieEntity.fromJson(response.data as Map<String, dynamic>);
   }

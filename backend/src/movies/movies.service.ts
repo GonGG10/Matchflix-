@@ -51,16 +51,24 @@ export class MoviesService {
 
   // Devuelve la siguiente película que el usuario aún no ha deslizado,
   // respetando las categorías y filtros de su pareja.
-  async findNext(userId: string, coupleId: string, overrides: any) {
+  async findNext(userId: string, coupleId: string, overrides: any, excludeIds: string[] = []) {
     const where = await this.buildWhere(coupleId, overrides);
 
-    const alreadySwiped = await this.prisma.swipe.findMany({
-      where: { userId },
-      select: { movieId: true },
-    });
+    const [alreadySwiped, matchedMovies] = await Promise.all([
+      this.prisma.swipe.findMany({
+        where: { userId },
+        select: { movieId: true },
+      }),
+      this.prisma.match.findMany({
+        where: { coupleId },
+        select: { movieId: true },
+      }),
+    ]);
     const swipedIds = alreadySwiped.map((s) => s.movieId);
-    if (swipedIds.length > 0) {
-      where.id = { notIn: swipedIds };
+    const matchedIds = matchedMovies.map((m) => m.movieId);
+    const allExclude = [...swipedIds, ...matchedIds, ...excludeIds];
+    if (allExclude.length > 0) {
+      where.id = { notIn: allExclude };
     }
 
     // Orden aleatorio para que la sesión de swipe no sea siempre igual.

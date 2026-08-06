@@ -16,6 +16,8 @@ class SwipeState {
     this.matchedMovie,
     this.noMoreMovies = false,
     this.errorMessage,
+    this.matchCount = 0,
+    this.maxMatchesReached = false,
   });
 
   final MovieEntity? currentMovie;
@@ -24,6 +26,8 @@ class SwipeState {
   final MovieEntity? matchedMovie; // no nulo mientras se muestra la animación de match
   final bool noMoreMovies;
   final String? errorMessage; // no nulo si la carga inicial falló (red, timeout, etc.)
+  final int matchCount; // cuántos matches lleva la pareja
+  final bool maxMatchesReached; // true cuando la pareja llega a 5 matches
 
   SwipeState copyWith({
     MovieEntity? currentMovie,
@@ -34,6 +38,8 @@ class SwipeState {
     bool? noMoreMovies,
     String? errorMessage,
     bool clearError = false,
+    int? matchCount,
+    bool? maxMatchesReached,
   }) {
     return SwipeState(
       currentMovie: currentMovie ?? this.currentMovie,
@@ -42,6 +48,8 @@ class SwipeState {
       matchedMovie: clearMatch ? null : (matchedMovie ?? this.matchedMovie),
       noMoreMovies: noMoreMovies ?? this.noMoreMovies,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
+      matchCount: matchCount ?? this.matchCount,
+      maxMatchesReached: maxMatchesReached ?? this.maxMatchesReached,
     );
   }
 }
@@ -55,10 +63,14 @@ class SwipeController extends StateNotifier<SwipeState> {
   final TokenStorage _tokenStorage;
   final Ref _ref;
 
+  /// IDs de películas ya vistas en esta sesión (swipeadas o descartadas).
+  /// Se envían al backend como excludeIds para que no vuelvan a aparecer.
+  final Set<String> _swipedIds = {};
+
   Future<void> _bootstrap() async {
     try {
-      final first = await _repository.fetchNext();
-      final second = first == null ? null : await _repository.fetchNext();
+      final first = await _repository.fetchNext(excludeIds: _swipedIds.toList());
+      final second = first == null ? null : await _repository.fetchNext(excludeIds: [..._swipedIds, first.id]);
       state = state.copyWith(
         currentMovie: first,
         nextMovie: second,
@@ -66,10 +78,10 @@ class SwipeController extends StateNotifier<SwipeState> {
         noMoreMovies: first == null,
         clearError: true,
       );
-      _connectRealtime();
+      if (first != null) {
+        _connectRealtime();
+      }
     } catch (_) {
-      // Sin esto, cualquier fallo (timeout, sin conexión, backend despertando)
-      // dejaba la pantalla de carga girando para siempre sin forma de reintentar.
       state = state.copyWith(
         isLoading: false,
         errorMessage: 'No se pudo conectar. Comprueba tu conexión e inténtalo de nuevo.',
@@ -91,7 +103,13 @@ class SwipeController extends StateNotifier<SwipeState> {
           coupleId: coupleId,
           onMatch: (data) {
             final movie = MovieEntity.fromJson(data['movie'] as Map<String, dynamic>);
-            state = state.copyWith(matchedMovie: movie);
+            final matchCount = data['matchCount'] as int? ?? 0;
+            final maxReached = data['maxMatchesReached'] as bool? ?? false;
+            state = state.copyWith(
+              matchedMovie: movie,
+              matchCount: matchCount,
+              maxMatchesReached: maxReached,
+            );
           },
         );
   }
@@ -102,14 +120,23 @@ class SwipeController extends StateNotifier<SwipeState> {
     final movie = state.currentMovie;
     if (movie == null) return;
 
-    // Optimista: avanza a la carta siguiente inmediatamente y precarga otra más.
+    // Registrar localmente para no volver a verla
+    _swipedIds.add(movie.id);
+
+    // Optimista: avanza a la carta siguiente inmediatamente
     final upcoming = state.nextMovie;
     state = state.copyWith(currentMovie: upcoming, nextMovie: null, noMoreMovies: upcoming == null);
 
-    unawaited(_repository.sendSwipe(movieId: movie.id, liked: liked));
+    // Enviamos el swipe al backend (await para asegurar que se procese
+    // antes de pedir la siguiente película y evitar duplicados).
+    try {
+      await _repository.sendSwipe(movieId: movie.id, liked: liked);
+    } catch (_) {
+      // Si falla el swipe, no bloqueamos al usuario
+    }
 
     if (upcoming != null) {
-      final preloaded = await _repository.fetchNext();
+      final preloaded = await _repository.fetchNext(excludeIds: _swipedIds.toList());
       state = state.copyWith(nextMovie: preloaded);
     }
   }
