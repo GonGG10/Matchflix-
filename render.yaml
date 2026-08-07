@@ -17,7 +17,8 @@ services:
       - key: CORS_ORIGIN
         value: "*"
       - key: WATCHMODE_API_KEY
-        sync: false
+        value: "wm_xH9Kv9WylyBGhU_g7nP19C1QqgiyUR-2CHIloQ60GSA"
+        sync: true
       - key: WATCHMODE_BASE_URL
         value: "https://api.watchmode.com/v1"
       - key: CATALOG_SYNC_COUNTRY
