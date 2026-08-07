@@ -16,8 +16,6 @@ function slugify(text: string): string {
     .replace(/\s+/g, '-');
 }
 
-
-// Mapa de géneros en inglés → español para evitar categorías duplicadas.
 const GENRE_MAP: Record<string, string> = {
   'Action': 'Acción', 'Action & Adventure': 'Acción y Aventura',
   'Adventure': 'Aventura', 'Animation': 'Animación', 'Anime': 'Anime',
@@ -29,7 +27,6 @@ const GENRE_MAP: Record<string, string> = {
   'Thriller': 'Thriller', 'War': 'Guerra', 'Western': 'Western',
   'Kids': 'Infantil', 'Reality': 'Reality', 'Sport': 'Deporte',
   'Talk': 'Talk', 'News': 'Noticias', 'Game Show': 'Concursos',
-  // Mapeo inverso (español → español) para normalizar géneros que ya vienen en español
   'Acción': 'Acción', 'Aventura': 'Aventura', 'Animación': 'Animación',
   'Comedia': 'Comedia', 'Crimen': 'Crimen', 'Documental': 'Documental',
   'Familia': 'Familia', 'Fantasía': 'Fantasía', 'Historia': 'Historia',
@@ -37,6 +34,7 @@ const GENRE_MAP: Record<string, string> = {
   'Ciencia ficción': 'Ciencia ficción', 'Guerra': 'Guerra',
   'Infantil': 'Infantil', 'Deporte': 'Deporte', 'Noticias': 'Noticias',
   'Concursos': 'Concursos', 'Supernatural': 'Supernatural', 'Food': 'Food',
+  'Sports': 'Deporte',
 };
 
 function normalizeGenre(name: string): string {
@@ -48,7 +46,7 @@ export class CatalogService {
   private readonly logger = new Logger(CatalogService.name);
   private lastLoginSyncAttempt: number | null = null;
   private readonly LOGIN_SYNC_THROTTLE_MS = 6 * 60 * 60 * 1000;
-  private isSeeding = false; // Mutex para evitar seedFallbackCatalog concurrentes
+  private isSeeding = false;
 
   constructor(
     @Inject(STREAMING_CATALOG_PROVIDER)
@@ -82,7 +80,6 @@ export class CatalogService {
   }
 
   async seedFallbackCatalog(): Promise<{ seeded: boolean; count: number }> {
-    // Mutex: si ya está seedeando, saltar (evita race conditions entre logins concurrentes)
     if (this.isSeeding) {
       this.logger.log('seedFallbackCatalog ya en curso, saltando...');
       return { seeded: false, count: 0 };
@@ -111,8 +108,6 @@ export class CatalogService {
     }
   }
 
-  // Repara las asociaciones de géneros para todas las películas del fallback.
-  // Útil cuando una ejecución previa falló y dejó películas sin categorías.
   async repairFallbackGenres(): Promise<{ repaired: number; total: number }> {
     const country = this.config.get<string>('watchmode.country') ?? 'ES';
     const titles = buildFallbackCatalog(country);
@@ -132,8 +127,93 @@ export class CatalogService {
       }
     }
 
-    this.logger.log(`Reparación de géneros: ${repaired} películas reparadas de ${titles.length}.`);
-    return { repaired, total: titles.length };
+    // También reparar películas de WatchMode que no tienen géneros:
+    // buscar si hay una película del fallback con el mismo título y copiar sus géneros
+    const moviesWithoutGenres = await this.prisma.movie.findMany({
+      where: { categories: { none: {} } },
+      include: { categories: true },
+    });
+
+    for (const m of moviesWithoutGenres) {
+      // Buscar si existe una película del fallback con el mismo título
+      const fallbackMatch = titles.find(
+        (t) => t.title.toLowerCase() === m.title.toLowerCase() && t.genres.length > 0,
+      );
+      if (fallbackMatch) {
+        try {
+          await this.syncGenres(m.id, fallbackMatch.genres);
+          repaired++;
+          this.logger.log(`Géneros copiados del fallback a WatchMode movie '${m.title}'`);
+        } catch (err: any) {
+          this.logger.error(`Error copiando géneros a '${m.title}': ${err.message}`);
+        }
+      }
+    }
+
+    this.logger.log(`Reparación de géneros: ${repaired} películas reparadas.`);
+    return { repaired, total: titles.length + moviesWithoutGenres.length };
+  }
+
+  // Fusiona películas duplicadas por título: si hay dos películas con el mismo
+  // título (una de WatchMode y otra del fallback), mantiene una y elimina la otra,
+  // moviendo los swipes y categorías a la superviviente.
+  async mergeDuplicateMovies(): Promise<{ merged: number }> {
+    const allMovies = await this.prisma.movie.findMany({
+      select: { id: true, title: true, externalId: true },
+    });
+
+    // Agrupar por título (case-insensitive)
+    const byTitle = new Map<string, typeof allMovies>();
+    for (const m of allMovies) {
+      const key = m.title.toLowerCase();
+      if (!byTitle.has(key)) byTitle.set(key, []);
+      byTitle.get(key)!.push(m);
+    }
+
+    let merged = 0;
+    for (const [key, dupes] of byTitle) {
+      if (dupes.length < 2) continue;
+
+      // Preferir la película del fallback (tiene géneros garantizados)
+      const fallback = dupes.find((d) => d.externalId.startsWith('fallback'));
+      const survivor = fallback ?? dupes[0];
+      const toDelete = dupes.filter((d) => d.id !== survivor.id);
+
+      for (const d of toDelete) {
+        try {
+          // Mover swipes a la superviviente
+          const swipes = await this.prisma.swipe.findMany({ where: { movieId: d.id } });
+          for (const s of swipes) {
+            await this.prisma.swipe.upsert({
+              where: { userId_movieId: { userId: s.userId, movieId: survivor.id } },
+              update: { direction: s.direction },
+              create: { userId: s.userId, movieId: survivor.id, direction: s.direction, coupleId: s.coupleId },
+            }).catch(() => {});
+          }
+          await this.prisma.swipe.deleteMany({ where: { movieId: d.id } });
+
+          // Mover categorías a la superviviente
+          const cats = await this.prisma.movieCategory.findMany({ where: { movieId: d.id } });
+          for (const c of cats) {
+            await this.prisma.movieCategory.upsert({
+              where: { movieId_categoryId: { movieId: survivor.id, categoryId: c.categoryId } },
+              update: {},
+              create: { movieId: survivor.id, categoryId: c.categoryId },
+            }).catch(() => {});
+          }
+
+          // Eliminar la película duplicada
+          await this.prisma.movie.delete({ where: { id: d.id } });
+          merged++;
+          this.logger.log(`Película duplicada fusionada: '${survivor.title}' (eliminada ${d.externalId})`);
+        } catch (err: any) {
+          this.logger.error(`Error fusionando '${d.title}': ${err.message}`);
+        }
+      }
+    }
+
+    this.logger.log(`Fusión de duplicados: ${merged} películas eliminadas.`);
+    return { merged };
   }
 
   async dedupCategories(): Promise<number> {
@@ -142,7 +222,6 @@ export class CatalogService {
 
     let merged = 0;
     for (const [engName, espName] of Object.entries(GENRE_MAP)) {
-      // Saltar mapeos inversos (español → español) — no hay nada que dedup
       if (engName === espName) continue;
 
       const engSlug = slugify(engName);
@@ -180,14 +259,12 @@ export class CatalogService {
 
           await this.prisma.category.delete({ where: { id: engCat.id } });
           merged++;
-          this.logger.log(`Categoría '${engName}' fusionada con '${espName}'`);
         } else {
           await this.prisma.category.update({
             where: { id: engCat.id },
             data: { name: espName, slug: espSlug },
           });
           merged++;
-          this.logger.log(`Categoría '${engName}' renombrada a '${espName}'`);
         }
       } catch (err: any) {
         this.logger.error(`Error al deduplicar categoría '${engName}': ${err.message}`);
@@ -203,17 +280,35 @@ export class CatalogService {
       const engCat = bySlug.get(slugify(engName));
       if (!engCat) continue;
       try {
-        await this.prisma.category.update({
-          where: { id: engCat.id },
-          data: { name: espName, slug: slugify(espName) },
-        });
-        merged++;
+        // Si la categoría española ya existe, fusionar como arriba
+        const espCat = bySlug.get(slugify(espName));
+        if (espCat) {
+          const movieLinks = await this.prisma.movieCategory.findMany({
+            where: { categoryId: engCat.id },
+          });
+          for (const link of movieLinks) {
+            await this.prisma.movieCategory.upsert({
+              where: { movieId_categoryId: { movieId: link.movieId, categoryId: espCat.id } },
+              update: {},
+              create: { movieId: link.movieId, categoryId: espCat.id },
+            });
+          }
+          await this.prisma.movieCategory.deleteMany({ where: { categoryId: engCat.id } });
+          await this.prisma.coupleCategory.deleteMany({ where: { categoryId: engCat.id } });
+          await this.prisma.category.delete({ where: { id: engCat.id } });
+          merged++;
+        } else {
+          await this.prisma.category.update({
+            where: { id: engCat.id },
+            data: { name: espName, slug: slugify(espName) },
+          });
+          merged++;
+        }
       } catch (err: any) {
         this.logger.error(`Error al renombrar '${engName}': ${err.message}`);
       }
     }
 
-    // Eliminar categorías sin películas ni parejas (solo si no están en el mapa canónico)
     const remainingCats = await this.prisma.category.findMany({
       include: { _count: { select: { movies: true, couples: true } } },
     });
@@ -292,7 +387,6 @@ export class CatalogService {
     await this.syncAvailability(movie.id, title.country, title.availability);
   }
 
-  // syncGenres con try-catch por cada género — un fallo no arrastra al resto
   private async syncGenres(movieId: string, genreNames: string[]) {
     for (const rawName of genreNames) {
       try {
@@ -329,7 +423,7 @@ export class CatalogService {
           create: { movieId, platformId: platform.id, country, deepLinkUrl: item.deepLinkUrl },
         });
       } catch (err: any) {
-        this.logger.error(`syncAvailability: Error con plataforma '${item.platformName}': ${err.message}`);
+        this.logger.error(`syncAvailability: Error: ${err.message}`);
       }
     }
   }

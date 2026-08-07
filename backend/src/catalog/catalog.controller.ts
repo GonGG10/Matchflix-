@@ -7,15 +7,12 @@ export class CatalogController {
 
   @Post('sync')
   async triggerSync(@Query('force') force?: string) {
-    // Return immediately — sync runs in background (takes ~3 min on free tier)
     this.catalogService.syncCatalog(force === 'true')
       .then((result) => console.log(`Sync completed: ${result.titlesProcessed} titles`))
       .catch((err) => console.error(`Sync failed: ${err.message}`));
-    return { status: 'accepted', message: 'Sync started in background. Check catalog size in a few minutes.' };
+    return { status: 'accepted', message: 'Sync started in background.' };
   }
 
-  // Repara las asociaciones de géneros para todas las películas del fallback.
-  // Útil cuando una ejecución previa falló y dejó películas sin categorías.
   @Post('repair-genres')
   async repairGenres() {
     try {
@@ -26,13 +23,42 @@ export class CatalogController {
     }
   }
 
-  // Fuerza el seed del fallback catalog + dedup de categorías
+  @Post('merge-duplicates')
+  async mergeDuplicates() {
+    try {
+      const result = await this.catalogService.mergeDuplicateMovies();
+      return { status: 'ok', merged: result.merged };
+    } catch (err: any) {
+      return { status: 'error', message: err.message };
+    }
+  }
+
   @Post('seed')
   async seedFallback() {
     try {
       const result = await this.catalogService.seedFallbackCatalog();
       await this.catalogService.dedupCategories();
       return { status: 'ok', count: result.count };
+    } catch (err: any) {
+      return { status: 'error', message: err.message };
+    }
+  }
+
+  // Endpoint todo-en-uno: seed + repair + merge + dedup
+  @Post('repair-all')
+  async repairAll() {
+    try {
+      const seed = await this.catalogService.seedFallbackCatalog();
+      const repair = await this.catalogService.repairFallbackGenres();
+      const merge = await this.catalogService.mergeDuplicateMovies();
+      const dedup = await this.catalogService.dedupCategories();
+      return {
+        status: 'ok',
+        seeded: seed.count,
+        repaired: repair.repaired,
+        merged: merge.merged,
+        deduped: dedup,
+      };
     } catch (err: any) {
       return { status: 'error', message: err.message };
     }
