@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import '../../../core/network/api_endpoints.dart';
 import '../../../core/network/token_storage.dart';
+import '../../../core/storage/seen_movies_storage.dart';
 
 /// Repositorio de salas temporales.
 ///
@@ -26,6 +27,9 @@ class RoomsRepository {
 
   /// Crea una sala: registra usuario anónimo + crea pareja PENDING.
   Future<Map<String, dynamic>> createRoom() async {
+    // Limpiar películas vistas de sesiones anteriores
+    SeenMoviesStorage().clear();
+
     final email = 'anon_${_randomId()}@matchflix.app';
     final password = 'Tx${_randomId()}#1a';
     final displayName = _randomName();
@@ -55,6 +59,9 @@ class RoomsRepository {
 
   /// Se une a una sala existente con un código de invitación.
   Future<Map<String, dynamic>> joinRoom(String inviteCode) async {
+    // Limpiar películas vistas de sesiones anteriores
+    SeenMoviesStorage().clear();
+
     final email = 'anon_${_randomId()}@matchflix.app';
     final password = 'Tx${_randomId()}#1a';
     final displayName = _randomName();

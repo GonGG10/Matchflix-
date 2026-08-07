@@ -10,3 +10,7 @@ final allCategoriesProvider = FutureProvider<List<CategoryEntity>>((ref) {
 });
 
 final selectedCategoryIdsProvider = StateProvider<Set<String>>((ref) => {});
+
+/// Tipo de contenido seleccionado en la pantalla de categorías.
+/// null = todo, 'MOVIE' = solo películas, 'SERIES' = solo series
+final selectedMediaTypeProvider = StateProvider<String?>((ref) => null);

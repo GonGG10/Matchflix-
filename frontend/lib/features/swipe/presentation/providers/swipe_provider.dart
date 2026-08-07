@@ -2,11 +2,15 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/network/core_providers.dart';
 import '../../../../core/network/token_storage.dart';
+import '../../../../core/storage/seen_movies_storage.dart';
 import '../../data/movies_repository.dart';
 import '../../domain/movie_entity.dart';
+import '../../../categories/presentation/providers/categories_provider.dart';
 import '../../../filters/presentation/providers/filters_provider.dart';
 
 final moviesRepositoryProvider = Provider((ref) => MoviesRepository(ref.watch(dioProvider)));
+
+final seenMoviesStorageProvider = Provider((ref) => SeenMoviesStorage());
 
 class _Sentinel { const _Sentinel(); }
 const _sentinel = _Sentinel();
@@ -58,21 +62,27 @@ class SwipeState {
 }
 
 class SwipeController extends StateNotifier<SwipeState> {
-  SwipeController(this._repository, this._tokenStorage, this._ref) : super(const SwipeState()) {
+  SwipeController(this._repository, this._tokenStorage, this._ref, this._seenStorage) : super(const SwipeState()) {
     _bootstrap();
   }
 
   final MoviesRepository _repository;
   final TokenStorage _tokenStorage;
   final Ref _ref;
+  final SeenMoviesStorage _seenStorage;
 
-  /// IDs de películas ya vistas en esta sesión.
-  final Set<String> _swipedIds = {};
+  /// IDs de películas ya vistas — cargados desde sessionStorage para persistir
+  /// entre recreaciones del controlador y recargas de página.
+  Set<String> _swipedIds = {};
   bool _isSwiping = false;
 
-  /// Obtiene el mediaType actual del filtro guardado
+  /// Obtiene el mediaType actual desde la pantalla de categorías o filtros
   String? get _currentMediaType {
     try {
+      // Primero intenta leer desde la selección de categorías
+      final catMediaType = _ref.read(selectedMediaTypeProvider);
+      if (catMediaType != null) return catMediaType;
+      // Si no, lee desde los filtros guardados
       final filters = _ref.read(filtersControllerProvider);
       return filters.mediaType;
     } catch (_) {
@@ -80,16 +90,51 @@ class SwipeController extends StateNotifier<SwipeState> {
     }
   }
 
+  /// Fetch con retry: si el backend devuelve una película ya vista,
+  /// la añade a excludeIds y reintenta hasta 8 veces.
+  Future<MovieEntity?> _fetchNextWithRetry({
+    required Set<String> excludeIds,
+    String? mediaType,
+    int maxRetries = 8,
+  }) async {
+    for (int attempt = 0; attempt < maxRetries; attempt++) {
+      final movie = await _repository.fetchNext(
+        excludeIds: excludeIds.toList(),
+        mediaType: mediaType,
+      );
+      if (movie == null) return null;
+
+      // Si la película ya fue vista, la añadimos a la exclusión y reintentamos
+      if (excludeIds.contains(movie.id)) {
+        continue;
+      }
+
+      return movie;
+    }
+
+    // Si después de todos los reintentos seguimos obteniendo repetidas,
+    // devolvemos null (no hay más contenido nuevo)
+    return null;
+  }
+
   Future<void> _bootstrap() async {
     try {
-      _swipedIds.clear();
+      // Cargar IDs vistos desde sessionStorage
+      _swipedIds = _seenStorage.load();
+
       final mediaType = _currentMediaType;
-      final first = await _repository.fetchNext(excludeIds: [], mediaType: mediaType);
-      if (first != null) _swipedIds.add(first.id);
+      final first = await _fetchNextWithRetry(excludeIds: _swipedIds, mediaType: mediaType);
+      if (first != null) {
+        _swipedIds.add(first.id);
+        _seenStorage.add(first.id);
+      }
       final second = first == null
           ? null
-          : await _repository.fetchNext(excludeIds: _swipedIds.toList(), mediaType: mediaType);
-      if (second != null) _swipedIds.add(second.id);
+          : await _fetchNextWithRetry(excludeIds: _swipedIds, mediaType: mediaType);
+      if (second != null) {
+        _swipedIds.add(second.id);
+        _seenStorage.add(second.id);
+      }
 
       state = SwipeState(
         currentMovie: first,
@@ -116,6 +161,8 @@ class SwipeController extends StateNotifier<SwipeState> {
   /// Reinicia todo: borra swipes en el backend y recarga desde cero.
   Future<void> refresh() async {
     _isSwiping = false;
+    _seenStorage.clear();
+    _swipedIds = {};
     state = const SwipeState(isLoading: true);
     try {
       await _repository.resetSwipes();
@@ -129,7 +176,6 @@ class SwipeController extends StateNotifier<SwipeState> {
     try {
       final repo = _ref.read(roomsRepositoryProvider);
       final status = await repo.getRoomStatus();
-      // CRITICAL: use coupleId (UUID), NOT inviteCode
       final coupleId = status['coupleId'] as String?;
       final hasRoom = status['hasRoom'] as bool? ?? false;
       if (!hasRoom || coupleId == null) return;
@@ -159,8 +205,9 @@ class SwipeController extends StateNotifier<SwipeState> {
 
     _isSwiping = true;
 
-    // Registrar localmente
+    // Registrar localmente Y en sessionStorage
     _swipedIds.add(movie.id);
+    _seenStorage.add(movie.id);
 
     // Avanzar a la siguiente carta
     final upcoming = state.nextMovie;
@@ -170,16 +217,19 @@ class SwipeController extends StateNotifier<SwipeState> {
       noMoreMovies: upcoming == null,
     );
 
-    // Enviar swipe al backend (await para que quede registrado)
+    // Enviar swipe al backend
     try {
       await _repository.sendSwipe(movieId: movie.id, liked: liked);
     } catch (_) {}
 
-    // Precargar la siguiente carta, excluyendo TODAS las ya vistas
+    // Precargar la siguiente carta con retry anti-repetición
     if (upcoming != null) {
       final mediaType = _currentMediaType;
-      final preloaded = await _repository.fetchNext(excludeIds: _swipedIds.toList(), mediaType: mediaType);
-      if (preloaded != null) _swipedIds.add(preloaded.id);
+      final preloaded = await _fetchNextWithRetry(excludeIds: _swipedIds, mediaType: mediaType);
+      if (preloaded != null) {
+        _swipedIds.add(preloaded.id);
+        _seenStorage.add(preloaded.id);
+      }
       state = state.copyWith(nextMovie: preloaded);
     }
 
@@ -192,5 +242,6 @@ final swipeControllerProvider = StateNotifierProvider<SwipeController, SwipeStat
     ref.watch(moviesRepositoryProvider),
     ref.watch(tokenStorageProvider),
     ref,
+    ref.watch(seenMoviesStorageProvider),
   );
 });
