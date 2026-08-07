@@ -1,3 +1,4 @@
+import '../../../core/storage/swiped_ids_global.dart';
 import 'dart:math';
 import 'package:dio/dio.dart';
 import '../../../core/network/api_endpoints.dart';
@@ -29,6 +30,7 @@ class RoomsRepository {
   Future<Map<String, dynamic>> createRoom() async {
     // Limpiar películas vistas de sesiones anteriores
     SeenMoviesStorage().clear();
+    clearGlobalSwipedIds();
 
     final email = 'anon_${_randomId()}@matchflix.app';
     final password = 'Tx${_randomId()}#1a';
@@ -61,6 +63,7 @@ class RoomsRepository {
   Future<Map<String, dynamic>> joinRoom(String inviteCode) async {
     // Limpiar películas vistas de sesiones anteriores
     SeenMoviesStorage().clear();
+    clearGlobalSwipedIds();
 
     final email = 'anon_${_randomId()}@matchflix.app';
     final password = 'Tx${_randomId()}#1a';
