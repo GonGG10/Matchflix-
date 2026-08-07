@@ -80,10 +80,8 @@ class SwipeController extends StateNotifier<SwipeState> {
   /// Obtiene el mediaType actual desde la pantalla de categorías o filtros
   String? get _currentMediaType {
     try {
-      // Primero intenta leer desde la selección de categorías
       final catMediaType = _ref.read(selectedMediaTypeProvider);
       if (catMediaType != null) return catMediaType;
-      // Si no, lee desde los filtros guardados
       final filters = _ref.read(filtersControllerProvider);
       return filters.mediaType;
     } catch (_) {
@@ -91,12 +89,21 @@ class SwipeController extends StateNotifier<SwipeState> {
     }
   }
 
+  /// Construye el set completo de IDs a excluir:
+  /// BARRERA 1: globalSwipedIds (memoria persistente, sobrevive autoDispose)
+  /// BARRERA 2: sessionStorage (persiste entre recargas)
+  /// BARRERA 3: _swipedIds del controlador
+  Set<String> _buildExcludeIds() {
+    return {...globalSwipedIds, ..._swipedIds};
+  }
+
   /// Fetch con retry: si el backend devuelve una película ya vista,
-  /// la añade a excludeIds y reintenta hasta 8 veces.
+  /// la añade a excludeIds y reintenta hasta 15 veces.
+  /// BARRERA 3: reintenta hasta 15 veces si el backend devuelve repetidas
   Future<MovieEntity?> _fetchNextWithRetry({
     required Set<String> excludeIds,
     String? mediaType,
-    int maxRetries = 8,
+    int maxRetries = 15,
   }) async {
     for (int attempt = 0; attempt < maxRetries; attempt++) {
       final movie = await _repository.fetchNext(
@@ -105,39 +112,42 @@ class SwipeController extends StateNotifier<SwipeState> {
       );
       if (movie == null) return null;
 
-      // Si la película ya fue vista, la añadimos a excludeIds Y a sessionStorage
-      // para que el backend no la devuelva en el siguiente intento
-      if (excludeIds.contains(movie.id)) {
+      // Si la película ya fue vista (está en cualquier barrera), excluirla y reintentar
+      if (excludeIds.contains(movie.id) || globalSwipedIds.contains(movie.id)) {
         excludeIds.add(movie.id);
         _seenStorage.add(movie.id);
+        globalSwipedIds.add(movie.id);
         continue;
       }
 
       return movie;
     }
 
-    // Si después de todos los reintentos seguimos obteniendo repetidas,
-    // devolvemos null (no hay más contenido nuevo)
     return null;
   }
 
   Future<void> _bootstrap() async {
     try {
-      // Cargar IDs vistos desde sessionStorage
+      // Cargar IDs desde sessionStorage (BARRERA 2)
       _swipedIds = _seenStorage.load();
 
+      // Construir exclusiones combinadas (BARRERAS 1+2+3)
+      final allExclude = _buildExcludeIds();
+
       final mediaType = _currentMediaType;
-      final first = await _fetchNextWithRetry(excludeIds: _swipedIds, mediaType: mediaType);
+      final first = await _fetchNextWithRetry(excludeIds: allExclude, mediaType: mediaType);
       if (first != null) {
         _swipedIds.add(first.id);
         _seenStorage.add(first.id);
+        globalSwipedIds.add(first.id); // BARRERA 1
       }
       final second = first == null
           ? null
-          : await _fetchNextWithRetry(excludeIds: _swipedIds, mediaType: mediaType);
+          : await _fetchNextWithRetry(excludeIds: allExclude, mediaType: mediaType);
       if (second != null) {
         _swipedIds.add(second.id);
         _seenStorage.add(second.id);
+        globalSwipedIds.add(second.id); // BARRERA 1
       }
 
       state = SwipeState(
@@ -167,6 +177,7 @@ class SwipeController extends StateNotifier<SwipeState> {
     _isSwiping = false;
     _seenStorage.clear();
     _swipedIds = {};
+    clearGlobalSwipedIds(); // BARRERA 1: limpiar al resetear
     state = const SwipeState(isLoading: true);
     try {
       await _repository.resetSwipes();
@@ -209,9 +220,10 @@ class SwipeController extends StateNotifier<SwipeState> {
 
     _isSwiping = true;
 
-    // Registrar localmente Y en sessionStorage
-    _swipedIds.add(movie.id);
-    _seenStorage.add(movie.id);
+    // Registrar en TODAS las barreras
+    _swipedIds.add(movie.id);        // BARRERA 3
+    _seenStorage.add(movie.id);      // BARRERA 2
+    globalSwipedIds.add(movie.id);   // BARRERA 1
 
     // Avanzar a la siguiente carta
     final upcoming = state.nextMovie;
@@ -221,18 +233,25 @@ class SwipeController extends StateNotifier<SwipeState> {
       noMoreMovies: upcoming == null,
     );
 
-    // Enviar swipe al backend
-    try {
-      await _repository.sendSwipe(movieId: movie.id, liked: liked);
-    } catch (_) {}
+    // BARRERA 4: Enviar swipe al backend con retry (3 intentos)
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        await _repository.sendSwipe(movieId: movie.id, liked: liked);
+        break;
+      } catch (_) {
+        if (attempt < 2) await Future.delayed(const Duration(milliseconds: 500));
+      }
+    }
 
     // Precargar la siguiente carta con retry anti-repetición
     if (upcoming != null) {
       final mediaType = _currentMediaType;
-      final preloaded = await _fetchNextWithRetry(excludeIds: _swipedIds, mediaType: mediaType);
+      final allExclude = _buildExcludeIds();
+      final preloaded = await _fetchNextWithRetry(excludeIds: allExclude, mediaType: mediaType);
       if (preloaded != null) {
         _swipedIds.add(preloaded.id);
         _seenStorage.add(preloaded.id);
+        globalSwipedIds.add(preloaded.id); // BARRERA 1
       }
       state = state.copyWith(nextMovie: preloaded);
     }
