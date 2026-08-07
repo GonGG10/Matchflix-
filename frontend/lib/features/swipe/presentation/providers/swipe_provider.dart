@@ -240,7 +240,7 @@ class SwipeController extends StateNotifier<SwipeState> {
   }
 }
 
-final swipeControllerProvider = StateNotifierProvider<SwipeController, SwipeState>((ref) {
+final swipeControllerProvider = StateNotifierProvider.autoDispose<SwipeController, SwipeState>((ref) {
   return SwipeController(
     ref.watch(moviesRepositoryProvider),
     ref.watch(tokenStorageProvider),
