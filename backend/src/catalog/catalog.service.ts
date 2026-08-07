@@ -45,7 +45,7 @@ function normalizeGenre(name: string): string {
 export class CatalogService {
   private readonly logger = new Logger(CatalogService.name);
   private lastLoginSyncAttempt: number | null = null;
-  private readonly LOGIN_SYNC_THROTTLE_MS = 6 * 60 * 60 * 1000;
+  private readonly LOGIN_SYNC_THROTTLE_MS = 24 * 60 * 60 * 1000; // 24h — Watchmode free = 2500 req/mes
   private isSeeding = false;
 
   constructor(
@@ -337,18 +337,37 @@ export class CatalogService {
         this.logger.error('Fallo al actualizar el catálogo de respaldo', err),
       );
 
-    const now = Date.now();
-    if (
-      this.lastLoginSyncAttempt !== null &&
-      now - this.lastLoginSyncAttempt < this.LOGIN_SYNC_THROTTLE_MS
-    ) {
-      return;
-    }
-    this.lastLoginSyncAttempt = now;
+    // Throttle PERSISTENTE en BD (no en memoria) — sobrevive a reinicios de Render.
+    // Cada reinicio del servicio (que ocurre en cada deploy) reseteaba el throttle
+    // en memoria, disparando un sync completo de Watchmode (~750 peticiones API)
+    // en cada deploy. Esto agotó la cuota mensual gratuita de 2500 peticiones.
+    // Ahora comprobamos la fecha de la última película de Watchmode actualizada.
+    this.shouldRunWatchmodeSync().then((should) => {
+      if (!should) {
+        this.logger.log('Sync de Watchmode saltado: ya se ejecutó recientemente (throttle persistente).');
+        return;
+      }
+      this.syncCatalog().catch((err) =>
+        this.logger.warn(`Sincronización con Watchmode en login fallida: ${err.message}`),
+      );
+    });
+  }
 
-    this.syncCatalog().catch((err) =>
-      this.logger.warn(`Sincronización con Watchmode en login fallida: ${err.message}`),
-    );
+  // Comprueba en BD si ha pasado suficiente tiempo desde el último sync exitoso
+  // de Watchmode. Usa updatedAt de las películas NO-fallback como marca de tiempo.
+  private async shouldRunWatchmodeSync(): Promise<boolean> {
+    try {
+      const lastWatchmodeMovie = await this.prisma.movie.findFirst({
+        where: { NOT: { externalId: { startsWith: 'fallback' } } },
+        orderBy: { updatedAt: 'desc' },
+        select: { updatedAt: true },
+      });
+      if (!lastWatchmodeMovie) return true; // Nunca se ha sincronizado con éxito
+      const elapsed = Date.now() - lastWatchmodeMovie.updatedAt.getTime();
+      return elapsed > this.LOGIN_SYNC_THROTTLE_MS;
+    } catch (_) {
+      return false; // Si algo falla, mejor no arriesgar cuota
+    }
   }
 
   private async upsertTitle(title: RawCatalogTitle) {

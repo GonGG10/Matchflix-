@@ -90,7 +90,10 @@ export class WatchmodeProvider implements StreamingCatalogProvider {
     // 1 petición list + 50 peticiones de detalle por página = ~408 peticiones total.
     // Con concurrencia 5 y pausa de 500ms entre lotes, completa en ~40s.
     // Rate limit de Watchmode free: 120 req/min → ~6.8s por lote de 5 → seguro.
-    const MAX_PAGES = 15;
+    // Watchmode free plan = 2500 peticiones/mes. Con sync diario (throttle 24h)
+    // eso da ~83 peticiones de presupuesto por sync. 1 página de listado (50 items)
+    // + 50 peticiones de detalle = 51 peticiones. Deja margen para reintentos.
+    const MAX_PAGES = 1;
     const PAGE_SIZE = 50;
     const CONCURRENCY_LIMIT = 5;
     const BATCH_DELAY_MS = 500;
