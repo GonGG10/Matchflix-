@@ -97,7 +97,7 @@ export class MoviesService {
     const where = await this.buildWhere(coupleId, overrides);
     return this.prisma.movie.findMany({
       where,
-      take: 50,
+      take: 500,
       include: { categories: { include: { category: true } }, availability: { include: { platform: true } } },
     });
   }

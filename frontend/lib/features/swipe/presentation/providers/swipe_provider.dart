@@ -104,8 +104,11 @@ class SwipeController extends StateNotifier<SwipeState> {
       );
       if (movie == null) return null;
 
-      // Si la película ya fue vista, la añadimos a la exclusión y reintentamos
+      // Si la película ya fue vista, la añadimos a excludeIds Y a sessionStorage
+      // para que el backend no la devuelva en el siguiente intento
       if (excludeIds.contains(movie.id)) {
+        excludeIds.add(movie.id);
+        _seenStorage.add(movie.id);
         continue;
       }
 

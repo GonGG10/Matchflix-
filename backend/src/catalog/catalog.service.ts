@@ -73,39 +73,16 @@ export class CatalogService {
       await this.upsertTitle(title);
     }
 
-    // Solo eliminamos películas antiguas de Watchmode si la nueva sincronización
-    // trajo un número razonable de títulos (al menos 20). Si Watchmode devolvió
-    // muy pocos (fallo parcial, rate limit, etc.), conservamos todo para no
-    // vaciar el catálogo.
-    let deletedCount = 0;
-    if (titles.length >= 20) {
-      const staleMovies = await this.prisma.movie.findMany({
-        where: { externalId: { notIn: seenExternalIds } },
-        select: { id: true, externalId: true },
-      });
-      const idsToDelete = staleMovies
-        .filter((m) => !m.externalId.startsWith('fallback-'))
-        .map((m) => m.id);
-      if (idsToDelete.length > 0) {
-        const result = await this.prisma.movie.deleteMany({
-          where: { id: { in: idsToDelete } },
-        });
-        deletedCount = result.count;
-      }
-    } else {
-      this.logger.warn(
-        `Solo ${titles.length} títulos de Watchmode — no se elimina el catálogo existente.`,
-      );
-    }
-
+    // NUNCA eliminamos películas existentes — solo añadimos nuevas.
+    // Esto garantiza que el catálogo siempre crece y nunca se vacía.
     this.logger.log(
-      `Sincronización completa: ${titles.length} títulos de Watchmode procesados, ${deletedCount} eliminados (catálogo de respaldo preservado).`,
+      `Sincronización completa: ${titles.length} títulos procesados. Catálogo merge (sin eliminaciones).`,
     );
 
     // Limpiar categorías duplicadas después de la sincronización
     await this.dedupCategories();
 
-    return { titlesProcessed: titles.length, deleted: deletedCount };
+    return { titlesProcessed: titles.length, deleted: 0 };
   }
 
   // Inserta un catálogo de respaldo (películas y series reales, con pósters
