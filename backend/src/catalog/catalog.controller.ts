@@ -7,12 +7,11 @@ export class CatalogController {
 
   @Post('sync')
   async triggerSync(@Query('force') force?: string) {
-    try {
-      const result = await this.catalogService.syncCatalog(force === 'true');
-      return { status: 'ok', titlesProcessed: result.titlesProcessed, deleted: result.deleted };
-    } catch (err: any) {
-      return { status: 'error', message: err.message };
-    }
+    // Return immediately — sync runs in background (takes ~3 min on free tier)
+    this.catalogService.syncCatalog(force === 'true')
+      .then((result) => console.log(`Sync completed: ${result.titlesProcessed} titles`))
+      .catch((err) => console.error(`Sync failed: ${err.message}`));
+    return { status: 'accepted', message: 'Sync started in background. Check catalog size in a few minutes.' };
   }
 
   // Repara las asociaciones de géneros para todas las películas del fallback.
